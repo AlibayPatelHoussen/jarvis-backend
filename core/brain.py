@@ -3,25 +3,19 @@ core/brain.py
 =============
 Cerveau central de Jarvis.
 
-Responsabilité unique : recevoir un message, décider quoi
-faire, et retourner une réponse.
+Mise à jour : intégration de la mémoire.
+- ShortTermMemory : historique de la conversation
+- LongTermMemory  : faits persistants sur l'utilisateur
 
-Le Brain ne sait pas :
-- Comment afficher la réponse (rôle de l'interface)
-- Comment parler à Ollama (rôle de llm/ollama.py)
-- Comment sauvegarder (rôle de memory.py — à venir)
-
-Le Brain sait :
-- Quel module appeler selon le message
-- Comment construire le prompt système
-- Comment gérer les erreurs proprement
+Le Brain injecte maintenant l'historique dans chaque
+appel à Ollama pour que Jarvis se souvienne du contexte.
 """
 
 from llm.ollama import Ollama, OllamaError
+from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
 
 
-# Prompt système — définit la personnalité de Jarvis
 SYSTEM_PROMPT = f"""Tu es Jarvis, un assistant IA personnel.
 
 Caractéristiques :
@@ -48,52 +42,67 @@ class Brain:
     """
 
     def __init__(self):
-        """
-        Initialise le Brain.
-
-        On crée le client Ollama ici.
-        Plus tard on ajoutera la mémoire et les outils.
-        """
         self.llm = Ollama()
+        self.short_term = ShortTermMemory(max_messages=20)
+        self.long_term = LongTermMemory()
 
     def process(self, message: str) -> str:
         """
         Traite un message et retourne une réponse.
 
-        C'est la méthode principale du Brain.
-        Toute l'interface passe par ici.
-
-        Args:
-            message : Le message de l'utilisateur
-
-        Returns:
-            La réponse de Jarvis en string
+        Nouveauté : on passe l'historique à Ollama
+        pour qu'il se souvienne du contexte.
         """
-        # Valider l'entrée
         message = message.strip()
         if not message:
             return ""
 
-        # Envoyer à Ollama et retourner la réponse
         try:
+            # Récupérer l'historique court terme
+            history = self.short_term.get_history()
+
+            # Envoyer à Ollama avec l'historique
             response = self.llm.ask(
                 message=message,
-                system_prompt=SYSTEM_PROMPT
+                system_prompt=SYSTEM_PROMPT,
+                history=history
             )
+
+            # Sauvegarder l'échange dans la mémoire court terme
+            self.short_term.add("user", message)
+            self.short_term.add("assistant", response)
+
             return response
 
         except OllamaError as e:
-            # Ollama n'est pas disponible — message clair pour l'utilisateur
             return (
                 f"Je ne peux pas répondre en ce moment : {e}\n"
                 "Vérifiez qu'Ollama est lancé."
             )
 
-    def is_ready(self) -> bool:
+    def remember(self, key: str, value: str) -> None:
         """
-        Vérifie si le Brain est opérationnel.
+        Sauvegarde un fait en mémoire long terme.
+
+        Args:
+            key   : ex "prenom", "ville"
+            value : ex "Houssen", "Montréal"
+        """
+        self.long_term.save(key, value)
+
+    def recall(self, key: str) -> str:
+        """
+        Récupère un fait de la mémoire long terme.
 
         Returns:
-            True si Ollama est accessible, False sinon
+            La valeur ou None si inconnue
         """
+        return self.long_term.get(key)
+
+    def clear_conversation(self) -> None:
+        """Efface l'historique de la conversation en cours."""
+        self.short_term.clear()
+
+    def is_ready(self) -> bool:
+        """Vérifie si Ollama est accessible."""
         return self.llm.is_available()
