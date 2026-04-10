@@ -7,12 +7,6 @@ On teste la logique de la CLI sans lancer
 la vraie boucle interactive.
 """
 
-import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from interface.cli import (
     QUIT_COMMANDS,
     HELP_COMMAND,

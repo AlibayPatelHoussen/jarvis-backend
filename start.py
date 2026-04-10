@@ -10,7 +10,6 @@ Il choisit l'interface selon les arguments
 et démarre Jarvis.
 """
 
-import sys
 from interface.cli import run
 
 if __name__ == "__main__":
