@@ -4,11 +4,8 @@ tests/test_memory.py
 Tests unitaires pour core/memory.py
 """
 
-import sys
 import tempfile
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from pathlib import Path  # ← ajouter cette ligne
 
 from core.memory import ShortTermMemory, LongTermMemory
 
