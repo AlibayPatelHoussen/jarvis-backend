@@ -8,12 +8,7 @@ On teste deux types de choses :
 2. Tests avec Ollama réel (intégration) - marqués @pytest.mark.integration
 """
 
-import sys
-from pathlib import Path
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from llm.ollama import Ollama, OllamaError
 
 
