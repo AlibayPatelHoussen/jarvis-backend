@@ -9,14 +9,10 @@ On vérifie que :
 - La lecture du .env fonctionne
 """
 
+import config.settings as settings
 import os
-import sys
-from pathlib import Path
 
 # Ajouter la racine du projet au path Python
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import config.settings as settings
 
 
 def test_default_language():

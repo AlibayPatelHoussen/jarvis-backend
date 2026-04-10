@@ -198,4 +198,3 @@ class Brain:
     def is_ready(self) -> bool:
         """Vérifie si Ollama est accessible."""
         return self.llm.is_available()
-    

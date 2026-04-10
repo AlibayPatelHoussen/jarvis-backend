@@ -7,7 +7,6 @@ Responsabilité unique : charger et exposer la configuration.
 Le reste du code importe depuis ce fichier, jamais depuis le JSON directement.
 """
 
-import json
 import os
 from pathlib import Path
 
