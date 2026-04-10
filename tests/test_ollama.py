@@ -8,8 +8,8 @@ On teste deux types de choses :
 2. Tests avec Ollama réel (intégration) - marqués @pytest.mark.integration
 """
 
-from llm.ollama import Ollama, OllamaError
 import pytest
+from llm.ollama import Ollama, OllamaError
 
 
 # ─────────────────────────────────────────────

@@ -88,3 +88,4 @@ def test_process_responds_in_french(brain):
     response = brain.process("Quelle est ta langue principale ?")
     french_words = ["français", "france", "je", "est", "pour", "dans"]
     assert any(word in response.lower() for word in french_words)
+    

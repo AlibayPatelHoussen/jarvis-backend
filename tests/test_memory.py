@@ -4,9 +4,10 @@ tests/test_memory.py
 Tests unitaires pour core/memory.py
 """
 
-from core.memory import ShortTermMemory, LongTermMemory
 import tempfile
-from pathlib import Path
+from pathlib import Path  # ← ajouter cette ligne
+
+from core.memory import ShortTermMemory, LongTermMemory
 
 
 # ─────────────────────────────────────────────

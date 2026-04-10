@@ -14,7 +14,6 @@ Pourquoi urllib et pas requests ?
 import json
 import urllib.request
 import urllib.error
-
 from config import settings
 
 

@@ -9,10 +9,9 @@ On vérifie que :
 - La lecture du .env fonctionne
 """
 
-import config.settings as settings
 import os
 
-# Ajouter la racine du projet au path Python
+import config.settings as settings
 
 
 def test_default_language():
