@@ -1,0 +1,64 @@
+# .github/workflows/ci.yml
+# =========================
+# Pipeline CI — lancé à chaque push et pull request
+
+name: CI
+
+on:
+  push:
+    branches: ["develop", "main", "feature/*"]
+  pull_request:
+    branches: ["develop", "main"]
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Récupérer le code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Installer Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Installer les dépendances
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Lancer les tests unitaires uniquement
+      # (pas les tests d'intégration — Ollama n'est pas dispo sur GitHub)
+      - name: Run unit tests
+        run: |
+          pytest -v -m "not integration" --cov=. --cov-report=term-missing
+
+      # 5. Vérifier la couverture de code
+      - name: Coverage report
+        run: |
+          pytest -m "not integration" --cov=. --cov-report=xml
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linter
+        run: pip install flake8
+
+      - name: Run flake8
+        run: |
+          flake8 . --exclude=.venv,__pycache__ --max-line-length=100
