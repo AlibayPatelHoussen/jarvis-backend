@@ -60,9 +60,9 @@ CALC_PATTERNS = [
     r"(?:résultat|résoudre)\s+(.+)",
 ]
 WEATHER_PATTERNS = [
-    r"(?:quelle est la |la |)météo(?:\s+(?:à|a|en|de)\s+(.+))?",
-    r"(?:quel temps fait-il|il fait quel temps)(?:\s+(?:à|a|en)\s+(.+))?",
-    r"(?:température|temperature)(?:\s+(?:à|a|en)\s+(.+))?",
+    r"m[eé]t[eé]o(?:\s+(?:à|a|en|de)\s+(.+))?",
+    r"(?:quel temps|il fait quel temps)(?:\s+(?:à|a|en)\s+(.+))?",
+    r"temp[eé]rature(?:\s+(?:à|a|en)\s+(.+))?",
 ]
 
 
