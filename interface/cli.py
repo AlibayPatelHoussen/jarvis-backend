@@ -9,7 +9,7 @@ envoyer au Brain, afficher la réponse.
 
 from core.brain import Brain
 from config import settings
-from interface.voice import VoiceOutput
+from interface.voice import VoiceOutput, VoiceInput
 
 
 QUIT_COMMANDS = {"quit", "exit", "q", "au revoir", "bye"}
@@ -64,14 +64,15 @@ def print_help() -> None:
     print("  actualités               → titres du moment")
     print("  actualités tech          → actualités tech")
     print("  actualités sport         → actualités sport")
+    print("  vocal                    → activer/désactiver le micro")
     print()
 
 
 def run() -> None:
     """Lance la boucle principale de la CLI."""
     brain = Brain()
-    # Initialiser la voix (optionnel — fonctionne sans)
     tts = VoiceOutput()
+    stt = VoiceInput()
 
     if not brain.is_ready():
         print()
@@ -82,9 +83,29 @@ def run() -> None:
 
     print_welcome()
 
+    # Afficher le statut voix
+    if tts.is_available:
+        print("  🔊 Synthèse vocale : active")
+    if stt.is_available:
+        print("  🎤 Reconnaissance vocale : active (tapez 'vocal' pour activer)")
+    print()
+
+    voice_mode = False
+
     while True:
         try:
-            user_input = input(f"{settings.USER_NAME} >>> ").strip()
+            # Mode vocal ou texte
+            if voice_mode and stt.is_available:
+                print("  🎤 Parlez...")
+                user_input = stt.listen(timeout=10)
+                if user_input:
+                    print(f"{settings.USER_NAME} >>> {user_input}")
+                else:
+                    print("  (pas de son détecté — retour au mode texte)")
+                    voice_mode = False
+                    continue
+            else:
+                user_input = input(f"{settings.USER_NAME} >>> ").strip()
 
         except KeyboardInterrupt:
             print()
@@ -109,10 +130,18 @@ def run() -> None:
             print_help()
             continue
 
+        # Activer/désactiver le mode vocal
+        if user_input.lower() == "vocal":
+            voice_mode = not voice_mode
+            status = "activé" if voice_mode else "désactivé"
+            print(f"  🎤 Mode vocal {status}")
+            continue
+
         print()
         response = brain.process(user_input)
         print(f"Jarvis >>> {response}")
-        # Dire la réponse à voix haute si disponible
-        if tts.is_available:
-            tts.speak_async(response)
         print()
+
+        # Réponse vocale
+        if tts.is_available:
+            tts.speak(response)
