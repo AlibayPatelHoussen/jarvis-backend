@@ -56,6 +56,9 @@ def print_help() -> None:
     print("  CALCUL")
     print("  calcule [expression]     → ex: calcule 15 * 7")
     print("  combien fait [expr]      → ex: combien fait 2 ** 10")
+    print("  MÉTÉO")
+    print("  météo                    → météo à votre position")
+    print("  météo à [ville]          → météo d'une ville")
     print()
 
 

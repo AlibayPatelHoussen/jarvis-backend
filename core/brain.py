@@ -10,6 +10,7 @@ from tools.calculator import Calculator, CalculatorError
 from llm.ollama import Ollama, OllamaError
 from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
+from tools.weather import Weather, WeatherError
 
 
 SYSTEM_PROMPT = f"""Tu es Jarvis, un assistant IA personnel.
@@ -57,6 +58,11 @@ CALC_PATTERNS = [
     r"calcule?\s+(.+)",
     r"combien\s+(?:fait|vaut)\s+(.+)",
     r"(?:résultat|résoudre)\s+(.+)",
+]
+WEATHER_PATTERNS = [
+    r"(?:quelle est la |la |)météo(?:\s+(?:à|a|en|de)\s+(.+))?",
+    r"(?:quel temps fait-il|il fait quel temps)(?:\s+(?:à|a|en)\s+(.+))?",
+    r"(?:température|temperature)(?:\s+(?:à|a|en)\s+(.+))?",
 ]
 
 
@@ -159,6 +165,12 @@ class Brain:
             if match:
                 expression = match.group(1).strip()
                 return self._calculate(expression)
+            # Météo
+        for pattern in WEATHER_PATTERNS:
+            match = re.search(pattern, msg_lower)
+            if match:
+                city = match.group(1).strip() if match.group(1) else None
+                return self._get_weather(city)
 
         return None
 
@@ -219,3 +231,11 @@ class Brain:
             return f"{expression} = {calc.format_result(result)}"
         except CalculatorError as e:
             return f"Je ne peux pas calculer ça : {e}"
+
+    def _get_weather(self, city: str = None) -> str:
+        """Récupère la météo actuelle."""
+        weather = Weather()
+        try:
+            return weather.get(city)
+        except WeatherError as e:
+            return f"Impossible d'obtenir la météo : {e}"
