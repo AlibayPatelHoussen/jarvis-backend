@@ -53,6 +53,9 @@ def print_help() -> None:
     print("  aide                     → afficher cette aide")
     print("  quit / exit              → quitter Jarvis")
     print_separator()
+    print("  CALCUL")
+    print("  calcule [expression]     → ex: calcule 15 * 7")
+    print("  combien fait [expr]      → ex: combien fait 2 ** 10")
     print()
 
 

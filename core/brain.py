@@ -6,7 +6,7 @@ Gère la mémoire court terme et long terme.
 """
 
 import re
-
+from tools.calculator import Calculator, CalculatorError
 from llm.ollama import Ollama, OllamaError
 from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
@@ -52,6 +52,11 @@ CLEAR_PATTERNS = [
     r"efface la conversation",
     r"recommence",
     r"oublie tout",
+]
+CALC_PATTERNS = [
+    r"calcule?\s+(.+)",
+    r"combien\s+(?:fait|vaut)\s+(.+)",
+    r"(?:résultat|résoudre)\s+(.+)",
 ]
 
 
@@ -148,6 +153,13 @@ class Brain:
                 self.short_term.clear()
                 return "Conversation effacée. Repartons de zéro !"
 
+        # Calcul mathématique
+        for pattern in CALC_PATTERNS:
+            match = re.search(pattern, msg_lower)
+            if match:
+                expression = match.group(1).strip()
+                return self._calculate(expression)
+
         return None
 
     def _build_long_term_context(self) -> str:
@@ -198,3 +210,12 @@ class Brain:
     def is_ready(self) -> bool:
         """Vérifie si Ollama est accessible."""
         return self.llm.is_available()
+
+    def _calculate(self, expression: str) -> str:
+        """Évalue une expression mathématique."""
+        calc = Calculator()
+        try:
+            result = calc.evaluate(expression)
+            return f"{expression} = {calc.format_result(result)}"
+        except CalculatorError as e:
+            return f"Je ne peux pas calculer ça : {e}"
