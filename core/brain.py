@@ -11,6 +11,7 @@ from llm.ollama import Ollama, OllamaError
 from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
 from tools.weather import Weather, WeatherError
+from tools.news import News, NewsError
 
 
 SYSTEM_PROMPT = f"""Tu es Jarvis, un assistant IA personnel.
@@ -63,6 +64,12 @@ WEATHER_PATTERNS = [
     r"m[eé]t[eé]o(?:\s+(?:à|a|en|de)\s+(.+))?",
     r"(?:quel temps|il fait quel temps)(?:\s+(?:à|a|en)\s+(.+))?",
     r"temp[eé]rature(?:\s+(?:à|a|en)\s+(.+))?",
+]
+NEWS_PATTERNS = [
+    r"actualit[eé]s?(?:\s+(.+))?",
+    r"(?:les |)news(?:\s+(.+))?",
+    r"(?:quoi de neuf|nouvelles)(?:\s+(.+))?",
+    r"(?:titres|journal)(?:\s+(.+))?",
 ]
 
 
@@ -165,12 +172,21 @@ class Brain:
             if match:
                 expression = match.group(1).strip()
                 return self._calculate(expression)
-            # Météo
+
+        # Météo
         for pattern in WEATHER_PATTERNS:
             match = re.search(pattern, msg_lower)
             if match:
                 city = match.group(1).strip() if match.group(1) else None
                 return self._get_weather(city)
+
+        # Actualités
+        for pattern in NEWS_PATTERNS:
+            match = re.search(pattern, msg_lower)
+            if match:
+                category_hint = match.group(
+                    1).strip() if match.group(1) else ""
+                return self._get_news(category_hint)
 
         return None
 
@@ -239,3 +255,14 @@ class Brain:
             return weather.get(city)
         except WeatherError as e:
             return f"Impossible d'obtenir la météo : {e}"
+
+    def _get_news(self, category_hint: str = "") -> str:
+        """Récupère les actualités."""
+        news = News()
+        try:
+            category = news.detect_category(
+                category_hint) if category_hint else "general"
+            articles = news.get_headlines(category=category, max_articles=5)
+            return news.format(articles, category)
+        except NewsError as e:
+            return f"Impossible d'obtenir les actualités : {e}"
