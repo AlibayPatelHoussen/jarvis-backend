@@ -2,9 +2,6 @@
 tests/test_cli.py
 =================
 Tests unitaires pour interface/cli.py
-
-On teste la logique de la CLI sans lancer
-la vraie boucle interactive.
 """
 
 from interface.cli import (
@@ -62,3 +59,19 @@ def test_print_help_contains_aide(capsys):
     print_help()
     captured = capsys.readouterr()
     assert "aide" in captured.out
+
+
+def test_print_help_contains_memory_commands(capsys):
+    """L'aide doit mentionner les commandes mémoire."""
+    print_help()
+    captured = capsys.readouterr()
+    assert "souviens-toi" in captured.out
+    assert "que sais-tu" in captured.out
+    assert "oublie" in captured.out
+
+
+def test_print_help_contains_nouvelle_conversation(capsys):
+    """L'aide doit mentionner 'nouvelle conversation'."""
+    print_help()
+    captured = capsys.readouterr()
+    assert "nouvelle conversation" in captured.out
