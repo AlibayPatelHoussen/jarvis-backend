@@ -59,6 +59,10 @@ def print_help() -> None:
     print("  MÉTÉO")
     print("  météo                    → météo à votre position")
     print("  météo à [ville]          → météo d'une ville")
+    print("  ACTUALITÉS")
+    print("  actualités               → titres du moment")
+    print("  actualités tech          → actualités tech")
+    print("  actualités sport         → actualités sport")
     print()
 
 
