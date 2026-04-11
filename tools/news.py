@@ -31,7 +31,8 @@ RSS_FEEDS = {
         ("ZDNet", "https://www.zdnet.fr/feeds/rss/actualites/"),
     ],
     "sport": [
-        ("L'Équipe", "https://www.lequipe.fr/rss/actu_rss.xml"),
+        ("RMC Sport", "https://www.rmcsport.bfmtv.com/rss/football/"),
+        ("Eurosport", "https://www.eurosport.fr/rss.xml"),
     ],
     "science": [
         ("Futura Sciences", "https://www.futura-sciences.com/rss/actualites.xml"),
