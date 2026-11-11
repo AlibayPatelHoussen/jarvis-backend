@@ -18,13 +18,18 @@
 #   WORKSPACE=/media          dossier où Jarvis peut lire / écrire des fichiers
 #   PORT=8765                 port local du serveur
 #   DOCKER_ACCESS=yes         autoriser Jarvis à lister / redémarrer les conteneurs
+#   FULL_ACCESS=yes           accès complet : Jarvis tourne en root et peut aller
+#                             partout dans le serveur (dossier de travail « / »).
+#                             Commandes, écritures et redémarrages restent soumis
+#                             à votre accord.
 #   JARVIS_USER_NAME=Prénom   prénom utilisé par Jarvis (défaut : votre login)
 # =====================================================================
 
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-SERVICE_USER="jarvis"
+FULL_ACCESS="${FULL_ACCESS:-no}"
+if [ "$FULL_ACCESS" = "yes" ]; then SERVICE_USER="root"; else SERVICE_USER="jarvis"; fi
 DATA_DIR="/var/lib/jarvis"
 PORT="${PORT:-8765}"
 DOCKER_ACCESS="${DOCKER_ACCESS:-yes}"
@@ -44,7 +49,8 @@ if [ -z "${MODEL:-}" ]; then
   if [ "$RAM_GB" -ge 8 ]; then MODEL="qwen2.5:7b"; else MODEL="qwen2.5:3b"; fi
 fi
 if [ -z "${WORKSPACE:-}" ]; then
-  if [ -d /media ]; then WORKSPACE="/media"; else WORKSPACE="/srv"; fi
+  if [ "$FULL_ACCESS" = "yes" ]; then WORKSPACE="/"
+  elif [ -d /media ]; then WORKSPACE="/media"; else WORKSPACE="/srv"; fi
 fi
 
 echo "Jarvis sera installé avec :"
@@ -52,6 +58,11 @@ echo "  code      : $APP_DIR"
 echo "  données   : $DATA_DIR"
 echo "  modèle    : $MODEL (RAM détectée : ${RAM_GB} Go)"
 echo "  fichiers  : $WORKSPACE"
+if [ "$FULL_ACCESS" = "yes" ]; then
+  echo "  droits    : ACCÈS COMPLET (root) — chaque action sensible reste à autoriser"
+else
+  echo "  droits    : utilisateur « jarvis », sans droits root"
+fi
 echo "  adresse   : http://127.0.0.1:$PORT (API locale, sans interface)"
 
 # ─── 1. Paquets système ─────────────────────────────────────────────
@@ -82,7 +93,9 @@ fi
 
 # ─── 3. Utilisateur système ─────────────────────────────────────────
 step "Utilisateur système « $SERVICE_USER »"
-if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+if [ "$SERVICE_USER" = "root" ]; then
+  ok "Accès complet : le service tourne en root"
+elif ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
   ok "Utilisateur créé"
 else
@@ -90,7 +103,7 @@ else
 fi
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$DATA_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$APP_DIR/logs"
-if [ "$DOCKER_ACCESS" = "yes" ] && getent group docker >/dev/null; then
+if [ "$SERVICE_USER" != "root" ] && [ "$DOCKER_ACCESS" = "yes" ] && getent group docker >/dev/null; then
   usermod -aG docker "$SERVICE_USER"
   ok "Accès à Docker (le redémarrage d'un conteneur reste soumis à votre accord)"
 fi
@@ -134,6 +147,16 @@ chown root:"$SERVICE_USER" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 # ─── 5. Service systemd ─────────────────────────────────────────────
+if [ "$SERVICE_USER" = "root" ]; then
+  # Accès complet voulu : pas de restriction systemd (il doit pouvoir tout modifier)
+  HARDENING="# Accès complet (FULL_ACCESS=yes) : aucune restriction systemd"
+else
+  HARDENING="# Durcissement : pas d'élévation de droits, système en lecture seule
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only"
+fi
 step "Service systemd « jarvis »"
 cat > /etc/systemd/system/jarvis.service <<EOF
 [Unit]
@@ -150,11 +173,7 @@ ExecStart=$APP_DIR/.venv/bin/python start.py --server
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
-# Durcissement : pas d'élévation de droits, système en lecture seule
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=full
-ProtectHome=read-only
+$HARDENING
 
 [Install]
 WantedBy=multi-user.target
@@ -186,10 +205,10 @@ Jarvis est une API sans interface. Pour brancher une interface (ex. Nexus),
 créez-lui une clé (voir docs/SERVEUR.md) :
 
     cd $APP_DIR
-    sudo -u $SERVICE_USER .venv/bin/python start.py cles ajouter nexus --role admin --confiance
+    sudo -u $SERVICE_USER $APP_DIR/.venv/bin/python start.py cles ajouter nexus --role admin --confiance
 
 Parler à Jarvis dans le terminal :
-    sudo -u $SERVICE_USER .venv/bin/python start.py
+    sudo -u $SERVICE_USER $APP_DIR/.venv/bin/python start.py
 
 Commandes utiles :
     systemctl status jarvis           état du service
