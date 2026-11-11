@@ -71,3 +71,82 @@ def test_ask_returns_string():
     response = ollama.ask("Réponds juste 'ok'.")
     assert isinstance(response, str)
     assert len(response) > 0
+
+
+# ─────────────────────────────────────────────
+# Tests avec le faux serveur Ollama
+# ─────────────────────────────────────────────
+
+from tests.fake_ollama import FakeOllama  # noqa: E402
+from llm.ollama import OllamaModelMissing, OllamaToolsUnsupported  # noqa: E402
+
+
+@pytest.fixture
+def server():
+    with FakeOllama(models=["mistral:latest", "qwen2.5:7b"]) as fake:
+        yield fake
+
+
+def test_has_model_accepts_implicit_latest(server):
+    assert Ollama(host=server.url, model="mistral").has_model() is True
+    assert Ollama(host=server.url, model="qwen2.5:7b").has_model() is True
+    assert Ollama(host=server.url, model="llama3.1").has_model() is False
+
+
+def test_chat_without_stream(server):
+    server.replies.append({"content": "Bonjour !"})
+    reply = Ollama(host=server.url, model="mistral").chat(
+        [{"role": "user", "content": "Salut"}]
+    )
+    assert reply["content"] == "Bonjour !"
+    assert reply["tool_calls"] == []
+    assert server.requests[0]["stream"] is False
+
+
+def test_chat_streams_tokens(server):
+    server.replies.append({"content": "Il fait beau aujourd'hui"})
+    tokens = []
+    reply = Ollama(host=server.url, model="mistral").chat(
+        [{"role": "user", "content": "Météo ?"}], on_token=tokens.append
+    )
+    assert len(tokens) == 4
+    assert "".join(tokens) == "Il fait beau aujourd'hui"
+    assert reply["content"] == "Il fait beau aujourd'hui"
+    assert server.requests[0]["stream"] is True
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_chat_returns_tool_calls(server, stream):
+    server.replies.append({"content": "", "tool_calls": [
+        {"function": {"name": "calculer", "arguments": {"expression": "2+2"}}},
+        {"function": {"name": "meteo", "arguments": '{"ville": "Paris"}'}},
+    ]})
+    tools = [{"type": "function", "function": {"name": "calculer"}}]
+    reply = Ollama(host=server.url, model="mistral").chat(
+        [{"role": "user", "content": "2+2 ?"}],
+        tools=tools,
+        on_token=(lambda t: None) if stream else None,
+    )
+    assert reply["tool_calls"] == [
+        {"function": {"name": "calculer", "arguments": {"expression": "2+2"}}},
+        {"function": {"name": "meteo", "arguments": {"ville": "Paris"}}},
+    ]
+    assert server.requests[0]["tools"] == tools
+
+
+def test_missing_model_error(server):
+    with pytest.raises(OllamaModelMissing, match="ollama pull llama3.1"):
+        Ollama(host=server.url, model="llama3.1").chat([{"role": "user", "content": "x"}])
+
+
+def test_tools_unsupported_error():
+    with FakeOllama(supports_tools=False) as fake:
+        with pytest.raises(OllamaToolsUnsupported):
+            Ollama(host=fake.url, model="mistral").chat(
+                [{"role": "user", "content": "x"}], tools=[{"type": "function"}]
+            )
+
+
+def test_num_ctx_is_sent(server):
+    Ollama(host=server.url, model="mistral", num_ctx=8192).ask("x")
+    assert server.requests[0]["options"]["num_ctx"] == 8192

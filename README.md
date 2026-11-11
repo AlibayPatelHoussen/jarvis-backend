@@ -20,6 +20,21 @@ cp .env.example .env
 python start.py
 ```
 
+## Parler avec Jarvis dans le terminal
+
+1. Installer [Ollama](https://ollama.com) (gratuit) puis un modèle :
+   ```bash
+   ollama pull qwen2.5:7b      # conseillé : bon en français et avec les outils
+   ```
+2. Dans `.env` : `OLLAMA_MODEL=qwen2.5:7b` (et `JARVIS_USER_NAME=Votre prénom`)
+3. Lancer : `python start.py`
+
+Les réponses s'affichent en direct. Commandes utiles : `/aide`, `/modele`,
+`/voix on|off`, `/effacer`, `quit`. Sans Ollama, les commandes directes
+(calcul, météo, actualités, mémoire) fonctionnent quand même.
+
+La suite du projet est décrite dans [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Structure
 core/       → Cerveau (logique centrale)
 llm/        → Connexion aux modèles IA
