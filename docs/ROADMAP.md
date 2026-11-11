@@ -13,7 +13,7 @@ cet environnement (plugins, MCP, API HTTP).
 
 ---
 
-## Étape 1 — Conversation fluide dans le terminal
+## Étape 1 — Conversation fluide dans le terminal ✅
 
 | Amélioration | Détail |
 |---|---|
@@ -25,7 +25,7 @@ cet environnement (plugins, MCP, API HTTP).
 | Commandes système | `/aide`, `/modele`, `/voix on|off`, `/effacer`, `/quitter`. |
 | Moins de latence | Plus de requête « Ollama est-il là ? » avant chaque message. |
 
-## Étape 2 — Cerveau agent + registre d'outils
+## Étape 2 — Cerveau agent + registre d'outils ✅
 
 | Amélioration | Détail |
 |---|---|

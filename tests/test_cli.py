@@ -210,3 +210,24 @@ def test_voice_is_created_lazily(monkeypatch):
     voice.say("test")
     voice.shutdown()
     assert created == []
+
+
+def test_loop_shows_tool_calls_on_their_own_line(monkeypatch, capsys):
+    class ToolBrain:
+        def process(self, message, on_token=None):
+            on_token("Je calcule.")
+            self.on_tool("calculer", {"expression": "2+2"})
+            on_token("2+2 = 4")
+            return "Je calcule.2+2 = 4"
+
+    _run_loop(monkeypatch, ToolBrain(), ["combien ?"])
+    out = capsys.readouterr().out
+    assert "Jarvis >>> Je calcule.\n  [outil] calculer(expression='2+2')\nJarvis >>> 2+2 = 4" in out
+
+
+def test_confirm(monkeypatch):
+    from interface import cli
+    answers = iter(["o", "non"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    assert cli._confirm("supprimer('a')") is True
+    assert cli._confirm("supprimer('a')") is False

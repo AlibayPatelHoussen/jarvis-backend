@@ -299,3 +299,114 @@ def test_health(llm_brain, ollama_server, tmp_path):
     down = Brain(llm=Ollama(host="http://127.0.0.1:9"),
                  long_term=LongTermMemory(db_path=tmp_path / "d.db"))
     assert "ollama serve" in down.health()
+
+
+# ─────────────────────────────────────────────
+# Étape 2 : boucle agent avec outils
+# ─────────────────────────────────────────────
+
+from tools.registry import ToolRegistry  # noqa: E402
+
+
+def _call(name, **arguments):
+    return {"function": {"name": name, "arguments": arguments}}
+
+
+def test_agent_uses_tool_then_answers(llm_brain, ollama_server):
+    seen = []
+    llm_brain.on_tool = lambda name, args: seen.append((name, args))
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("calculer", expression="3 * 45 / 60")]},
+        {"content": "Cela fait 2,25 heures."},
+    ]
+    tokens = []
+    answer = llm_brain.process("3 réunions de 45 min, ça fait combien d'heures ?",
+                               on_token=tokens.append)
+    assert answer == "Cela fait 2,25 heures."
+    assert seen == [("calculer", {"expression": "3 * 45 / 60"})]
+
+    first, second = ollama_server.requests
+    assert "calculer" in [t["function"]["name"] for t in first["tools"]]
+    assert "Outils :" in first["messages"][0]["content"]
+    tool_msg = second["messages"][-1]
+    assert tool_msg == {"role": "tool", "tool_name": "calculer",
+                        "content": "3 * 45 / 60 = 2.25"}
+    assert second["messages"][-2]["tool_calls"][0]["function"]["name"] == "calculer"
+    # Historique : seulement la question et la réponse finale
+    assert [m["role"] for m in llm_brain.short_term.get_history()] == ["user", "assistant"]
+
+
+def test_agent_memorises_with_tool(llm_brain, ollama_server):
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("memoriser", fait="ma sœur s'appelle Léa")]},
+        {"content": "C'est noté."},
+    ]
+    llm_brain.process("Ma sœur s'appelle Léa")
+    assert "ma sœur s'appelle Léa" in llm_brain.long_term.get_all().values()
+
+
+def test_agent_several_tools_in_one_step(llm_brain, ollama_server):
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("calculer", expression="1+1"),
+                                       _call("outil_inconnu")]},
+        {"content": "Fini"},
+    ]
+    assert llm_brain.process("x") == "Fini"
+    contents = [m["content"] for m in ollama_server.requests[1]["messages"] if m["role"] == "tool"]
+    assert contents[0] == "1+1 = 2"
+    assert "n'existe pas" in contents[1]
+
+
+def test_agent_stops_after_max_steps(llm_brain, ollama_server):
+    from core.brain import MAX_AGENT_STEPS
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("date_heure")]}
+    ] * MAX_AGENT_STEPS
+    assert "plus de" in llm_brain.process("boucle")
+    assert len(ollama_server.requests) == MAX_AGENT_STEPS
+
+
+def test_agent_falls_back_when_model_has_no_tools(tmp_path):
+    with FakeOllama(supports_tools=False) as fake:
+        fake.replies.append({"content": "Réponse sans outils"})
+        brain = Brain(llm=Ollama(host=fake.url, model="mistral"),
+                      long_term=LongTermMemory(db_path=tmp_path / "m.db"))
+        tokens = []
+        assert brain.process("Bonjour", on_token=tokens.append) == "Réponse sans outils"
+        assert brain.tools_enabled is False
+        assert "ne sait pas utiliser" in "".join(tokens)
+        assert "tools" not in fake.requests[-1]
+        assert "Outils :" in fake.requests[0]["messages"][0]["content"]
+        brain.process("Encore")
+        assert "Outils :" not in fake.requests[-1]["messages"][0]["content"]
+
+
+def test_agent_without_tools(ollama_server, tmp_path):
+    brain = Brain(llm=Ollama(host=ollama_server.url, model="mistral"),
+                  long_term=LongTermMemory(db_path=tmp_path / "m.db"),
+                  tools=ToolRegistry())
+    brain.process("Bonjour")
+    assert "tools" not in ollama_server.requests[0]
+    assert "Outils :" not in ollama_server.requests[0]["messages"][0]["content"]
+
+
+def test_agent_sensitive_tool_needs_confirmation(ollama_server, tmp_path):
+    reg = ToolRegistry()
+    done = []
+
+    @reg.tool(confirm=True)
+    def effacer_disque() -> str:
+        """Action dangereuse."""
+        done.append(1)
+        return "effacé"
+
+    brain = Brain(llm=Ollama(host=ollama_server.url, model="mistral"),
+                  long_term=LongTermMemory(db_path=tmp_path / "m.db"), tools=reg)
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("effacer_disque")]},
+        {"content": "Refusé"},
+    ]
+    brain.process("Nettoie complètement le disque")
+    assert done == []
+    refused = ollama_server.requests[1]["messages"][-1]["content"]
+    assert refused == "Action refusée par l'utilisateur."
