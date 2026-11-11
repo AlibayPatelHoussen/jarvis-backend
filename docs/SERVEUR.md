@@ -86,13 +86,14 @@ Sur iPhone : *Partager → Sur l'écran d'accueil* pour l'avoir comme une app.
   ```bash
   cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py
   ```
-- **Autres applications** (téléphone, Nexus, logiciels compatibles OpenAI) :
+- **Autres applications** (téléphone, Nexus, logiciels qui parlent le format standard « OpenAI ») :
   crée une clé par application, puis suis [API.md](API.md).
   ```bash
   cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py cles ajouter telephone
   ```
-  Dans une application compatible OpenAI : adresse `https://jarvis.<ton-domaine>/v1`,
-  clé `jv_…`, modèle `jarvis`. Les actions sensibles demandées depuis ces
+  Dans une application qui accepte une adresse « OpenAI » personnalisée : adresse
+  `https://jarvis.<ton-domaine>/v1`, clé `jv_…`, modèle `jarvis`. Aucun compte
+  OpenAI n'est utilisé : c'est seulement le format des messages, ton Jarvis répond. Les actions sensibles demandées depuis ces
   applications attendent ton accord dans la page web.
 
 ## 4. Mettre à jour

@@ -267,8 +267,10 @@ def create_app(
         return {"approved": body.approved, "result": result}
 
     # ─────────────────────────────────────────
-    # API compatible OpenAI
+    # API au format standard (OpenAI)
     # ─────────────────────────────────────────
+    # Seulement le FORMAT des messages : aucun compte ni service OpenAI
+    # n'est utilisé, c'est ce serveur (modèle local Ollama) qui répond.
     # N'importe quelle application qui accepte « une adresse OpenAI
     # personnalisée » peut parler à Jarvis : base_url = https://…/v1,
     # clé = une clé d'application, modèle = "jarvis". Les actions

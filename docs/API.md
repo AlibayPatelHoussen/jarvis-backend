@@ -71,11 +71,17 @@ Mêmes règles que Nexus (terminal, fichiers et services réservés aux admins).
 L'application hôte est responsable de transmettre le bon rôle ; le rôle demandé
 ne dépasse **jamais** le rôle de sa clé (une clé `user` ne peut pas obtenir `admin`).
 
-## API compatible OpenAI (brancher n'importe quel logiciel)
+## API au format standard (OpenAI) — brancher n'importe quel logiciel
+
+> **Aucun compte OpenAI n'est utilisé.** « Format OpenAI » désigne seulement la
+> façon d'écrire les messages, devenue un standard que beaucoup d'applications
+> savent parler. Les messages vont à **ton** serveur et c'est **ton** Jarvis
+> (modèle local Ollama) qui répond : rien n'est envoyé à OpenAI ni à Anthropic,
+> rien n'est payant.
 
 Beaucoup d'applications (sur téléphone, ordinateur, domotique, éditeurs…) savent
-parler à « un serveur compatible OpenAI ». Elles peuvent parler à Jarvis sans
-aucun code :
+parler à un serveur « au format OpenAI » en acceptant une adresse personnalisée.
+Elles peuvent parler à Jarvis sans aucun code :
 
 | Réglage dans l'application | Valeur |
 |---|---|
@@ -84,7 +90,7 @@ aucun code :
 | Modèle | `jarvis` |
 
 Routes : `GET /v1/models` et `POST /v1/chat/completions` (avec ou sans
-`"stream": true`, format OpenAI standard, fin de flux `data: [DONE]`).
+`"stream": true`, fin de flux `data: [DONE]`).
 
 - C'est **le même Jarvis** : mêmes outils, même mémoire, mêmes tâches que la page web.
 - L'historique envoyé par l'application est utilisé (20 derniers messages) ; la
@@ -95,6 +101,9 @@ Routes : `GET /v1/models` et `POST /v1/chat/completions` (avec ou sans
   n'a pas de bouton Autoriser, elles sont **mises en attente**. Jarvis répond
   qu'il attend ton accord ; tu autorises depuis la page web (ou `/api/approvals`),
   puis le résultat arrive en notification.
+
+Exemple avec la bibliothèque Python `openai` (elle sait parler ce format ; ici
+elle parle **uniquement** à ton serveur Jarvis) :
 
 ```python
 from openai import OpenAI
