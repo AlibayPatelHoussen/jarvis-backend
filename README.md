@@ -29,6 +29,25 @@ python start.py
 2. Dans `.env` : `OLLAMA_MODEL=qwen2.5:7b` (et `JARVIS_USER_NAME=Votre prénom`)
 3. Lancer : `python start.py`
 
+Jarvis choisit seul ses outils (calcul, date, météo, actualités, mémoire) :
+« J'ai 3 réunions de 45 minutes, ça fait combien d'heures ? » déclenche l'outil
+de calcul. `/outils` liste ce qu'il sait faire. Il faut pour cela un modèle
+compatible avec les outils (qwen2.5, llama3.1, mistral v0.3).
+
+Pour ajouter une capacité, il suffit de déclarer une fonction Python :
+
+```python
+@registry.tool()
+def convertir_euros(montant: float, devise: str = "USD") -> str:
+    """
+    Convertit un montant en euros vers une autre devise.
+
+    Args:
+        montant : Montant en euros
+        devise  : Code de la devise cible
+    """
+```
+
 Les réponses s'affichent en direct. Commandes utiles : `/aide`, `/modele`,
 `/voix on|off`, `/effacer`, `quit`. Sans Ollama, les commandes directes
 (calcul, météo, actualités, mémoire) fonctionnent quand même.

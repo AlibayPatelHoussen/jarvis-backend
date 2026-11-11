@@ -8,9 +8,12 @@ Gère la mémoire court terme et long terme.
 import re
 from typing import Callable, Optional
 from tools.calculator import Calculator, CalculatorError
-from llm.ollama import Ollama, OllamaError
+from llm.ollama import Ollama, OllamaError, OllamaToolsUnsupported
+from tools.builtin import register_builtin_tools
+from tools.registry import ConfirmCallback, ToolRegistry
 from core.prompt import build_system_prompt
 from core.memory import ShortTermMemory, LongTermMemory
+from config import settings
 from tools.weather import Weather, WeatherError
 from tools.news import News, NewsError
 
@@ -74,6 +77,24 @@ NEWS_PATTERNS = [
 ]
 
 
+# Nombre maximal d'allers-retours modèle → outils pour un message
+MAX_AGENT_STEPS = 6
+
+TOOLS_GUIDE = """Outils :
+- Tu disposes d'outils (fonctions). Utilise-les quand ils sont utiles :
+  calculs, date, météo, actualités, mémoire, tâches... N'appelle pas
+  d'outil pour une simple discussion.
+- N'invente jamais le résultat d'un outil : appelle-le puis base ta
+  réponse sur ce qu'il renvoie.
+- Si un outil renvoie une erreur, explique-la simplement ou réessaie
+  avec d'autres arguments.
+- Quand l'utilisateur te donne une information personnelle durable,
+  enregistre-la avec l'outil memoriser."""
+
+# Fonction appelée avant chaque exécution d'outil (affichage dans la CLI)
+ToolCallback = Callable[[str, dict], None]
+
+
 def _clean(text: str) -> str:
     """Retire les espaces et la ponctuation finale d'un fragment."""
     return text.strip().rstrip(".!?").strip()
@@ -93,6 +114,9 @@ class Brain:
         self,
         llm: Ollama = None,
         long_term: LongTermMemory = None,
+        tools: ToolRegistry = None,
+        confirm: ConfirmCallback = None,
+        on_tool: ToolCallback = None,
     ):
         """
         Args:
@@ -100,10 +124,22 @@ class Brain:
             long_term : Mémoire long terme (défaut : data/memory.db).
                         Les tests passent une base temporaire pour ne
                         pas toucher à la vraie mémoire.
+            tools     : Outils utilisables par le modèle (défaut : outils
+                        intégrés). ToolRegistry() vide = aucun outil.
+            confirm   : Demande l'autorisation pour les outils sensibles.
+                        Sans cette fonction, ils sont refusés.
+            on_tool   : Prévenu avant chaque appel d'outil (affichage).
         """
         self.llm = llm or Ollama()
         self.short_term = ShortTermMemory(max_messages=20)
         self.long_term = long_term or LongTermMemory()
+        if tools is None:
+            tools = register_builtin_tools(ToolRegistry(), self.long_term)
+        self.tools = tools
+        self.confirm = confirm
+        self.on_tool = on_tool
+        # Passe à False si le modèle ne sait pas utiliser d'outils
+        self.tools_enabled = settings.TOOLS_ENABLED
 
     def process(
         self,
@@ -132,22 +168,71 @@ class Brain:
         if direct is not None:
             return direct
 
+        use_tools = self.tools_enabled and len(self.tools) > 0
         system = build_system_prompt(
-            known_facts=list(self.long_term.get_all().values())
+            known_facts=list(self.long_term.get_all().values()),
+            extra_sections=[TOOLS_GUIDE] if use_tools else None,
         )
         messages = [{"role": "system", "content": system}]
         messages += self.short_term.get_history()
         messages.append({"role": "user", "content": message})
 
         try:
-            reply = self.llm.chat(messages, on_token=on_token)
+            response = self._run_agent(messages, on_token)
         except OllamaError as e:
             return f"Je ne peux pas répondre en ce moment : {e}"
 
-        response = reply["content"]
         self.short_term.add("user", message)
         self.short_term.add("assistant", response)
         return response
+
+    def _run_agent(
+        self,
+        messages: list[dict],
+        on_token: Optional[Callable[[str], None]],
+    ) -> str:
+        """
+        Boucle agent : le modèle répond ou demande des outils ; on
+        exécute les outils, on lui renvoie les résultats, et on
+        recommence jusqu'à une réponse finale.
+
+        Seuls le message de l'utilisateur et la réponse finale sont
+        gardés dans l'historique (pas les étapes intermédiaires).
+        """
+        for _ in range(MAX_AGENT_STEPS):
+            tools = self.tools.schemas() if self.tools_enabled and len(self.tools) else None
+            try:
+                reply = self.llm.chat(messages, tools=tools, on_token=on_token)
+            except OllamaToolsUnsupported:
+                # Le modèle ne gère pas les outils : on continue sans
+                self.tools_enabled = False
+                if on_token:
+                    on_token(
+                        f"(Le modèle '{self.llm.model}' ne sait pas utiliser "
+                        "d'outils : réponse sans outils. Essayez qwen2.5:7b.)\n"
+                    )
+                continue
+
+            if not reply["tool_calls"]:
+                return reply["content"]
+
+            messages.append({
+                "role": "assistant",
+                "content": reply["content"],
+                "tool_calls": reply["tool_calls"],
+            })
+            for call in reply["tool_calls"]:
+                name = call["function"]["name"]
+                args = call["function"]["arguments"]
+                if self.on_tool:
+                    self.on_tool(name, args)
+                result = self.tools.execute(name, args, confirm=self.confirm)
+                messages.append({"role": "tool", "tool_name": name, "content": result})
+
+        return (
+            "Je n'ai pas réussi à terminer cette demande "
+            f"(plus de {MAX_AGENT_STEPS} étapes). Pouvez-vous la reformuler ?"
+        )
 
     def _handle_memory_commands(self, message: str) -> str | None:
         """
@@ -174,7 +259,7 @@ class Brain:
                 fact = _clean(match.group(1))
                 if not fact:
                     continue
-                self.long_term.save(self._next_fact_key(), fact)
+                self.long_term.add_fact(fact)
                 return f"Noté ! Je me souviendrai que {fact}."
 
         # "que sais-tu de moi ?"
@@ -216,20 +301,6 @@ class Brain:
                 return self._get_news(category_hint)
 
         return None
-
-    def _next_fact_key(self) -> str:
-        """
-        Génère une clé libre pour un nouveau fait.
-
-        On prend le plus grand numéro existant + 1 (et non le nombre
-        de faits + 1) : après une suppression, le compte baisse et
-        on écraserait un fait existant.
-        """
-        numbers = [
-            int(key[5:]) for key in self.long_term.get_all()
-            if key.startswith("fact_") and key[5:].isdigit()
-        ]
-        return f"fact_{max(numbers, default=0) + 1}"
 
     def _format_known_facts(self) -> str:
         """Formate les faits connus pour l'affichage."""

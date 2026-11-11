@@ -73,6 +73,7 @@ def print_help() -> None:
     print("  /aide                    → afficher cette aide")
     print("  /modele [nom]            → voir ou changer de modèle")
     print("  /voix on|off             → activer ou couper la voix")
+    print("  /outils                  → outils que Jarvis utilise seul")
     print("  /effacer                 → effacer la conversation")
     print("  quit / exit              → quitter Jarvis")
     print_separator()
@@ -156,6 +157,15 @@ def _handle_slash_command(text: str, brain: Brain, voice: Voice) -> bool:
         if voice.enabled and not voice.tts.is_available:
             state += " (mais pyttsx3 n'est pas disponible)"
         print(f"  Voix {state}.")
+    elif name in ("outils", "tools"):
+        tools = getattr(brain, "tools", None)
+        if tools is None or not len(tools):
+            print("  Aucun outil disponible.")
+        else:
+            state = "" if getattr(brain, "tools_enabled", True) else " (désactivés)"
+            print(f"  Outils que Jarvis peut utiliser seul{state} :")
+            for line in tools.describe().splitlines():
+                print(f"  {line}")
     elif name in ("effacer", "clear", "nouveau"):
         brain.clear_conversation()
         print("  Conversation effacée.")
@@ -163,6 +173,16 @@ def _handle_slash_command(text: str, brain: Brain, voice: Voice) -> bool:
         print(f"  Commande inconnue : /{name} — tapez /aide")
     print()
     return True
+
+
+def _confirm(action: str) -> bool:
+    """Demande l'autorisation avant une action sensible."""
+    print(f"\n  Jarvis veut exécuter : {action}")
+    try:
+        answer = input("  Autoriser ? (o/n) ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return answer in ("o", "oui", "y", "yes")
 
 
 def _loop(brain: Brain, voice: Voice) -> None:
@@ -199,13 +219,25 @@ def _loop(brain: Brain, voice: Voice) -> None:
             continue
 
         print()
-        print("Jarvis >>> ", end="", flush=True)
-        streamed = []
+        state = {"line_open": False, "streamed": False}
 
         def on_token(token: str) -> None:
-            streamed.append(token)
+            if not state["line_open"]:
+                print("Jarvis >>> ", end="")
+                state["line_open"] = True
+            state["streamed"] = True
             print(token, end="", flush=True)
 
+        def on_tool(name: str, args: dict) -> None:
+            # Montrer quel outil Jarvis utilise, sur sa propre ligne
+            if state["line_open"]:
+                print()
+                state["line_open"] = False
+            shown = ", ".join(f"{k}={v!r}" for k, v in args.items())
+            print(f"  [outil] {name}({shown})", flush=True)
+
+        brain.on_tool = on_tool
+        brain.confirm = _confirm
         try:
             response = brain.process(user_input, on_token=on_token)
         except KeyboardInterrupt:
@@ -214,9 +246,9 @@ def _loop(brain: Brain, voice: Voice) -> None:
             print()
             continue
 
-        if not streamed:
+        if not state["streamed"]:
             # Commande directe : rien n'a été streamé, on affiche tout
-            print(response, end="")
+            print(f"Jarvis >>> {response}", end="")
         print()
 
         # Dire la réponse à voix haute si disponible

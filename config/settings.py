@@ -67,6 +67,11 @@ try:
 except ValueError:
     OLLAMA_NUM_CTX = 4096
 
+# Laisser le modèle utiliser des outils (nécessite un modèle compatible)
+TOOLS_ENABLED: bool = os.environ.get("JARVIS_TOOLS", "on").lower() not in (
+    "off", "0", "non", "false"
+)
+
 # Anthropic (LLM cloud, optionnel)
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 
