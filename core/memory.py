@@ -213,6 +213,25 @@ class LongTermMemory:
             )
             return cursor.rowcount > 0
 
+    def add_fact(self, value: str) -> str:
+        """
+        Ajoute un fait avec une clé libre (fact_1, fact_2...).
+
+        On prend le plus grand numéro existant + 1 (et non le nombre
+        de faits + 1) : après une suppression, le compte baisse et
+        on écraserait un fait existant.
+
+        Returns:
+            La clé utilisée
+        """
+        numbers = [
+            int(key[5:]) for key in self.get_all()
+            if key.startswith("fact_") and key[5:].isdigit()
+        ]
+        key = f"fact_{max(numbers, default=0) + 1}"
+        self.save(key, value)
+        return key
+
     def count(self) -> int:
         """Retourne le nombre de faits stockés."""
         with self._connect() as conn:

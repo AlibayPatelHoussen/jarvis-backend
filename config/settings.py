@@ -54,6 +54,10 @@ _load_env()
 # Utilisateur
 USER_NAME: str = os.environ.get("JARVIS_USER_NAME", "Utilisateur")
 LANGUAGE: str = os.environ.get("JARVIS_LANGUAGE", "fr")
+# Lire les réponses à voix haute (si pyttsx3 est disponible)
+VOICE_ENABLED: bool = os.environ.get("JARVIS_VOICE", "on").lower() not in (
+    "off", "0", "non", "false"
+)
 
 # Ollama (LLM local)
 OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -63,14 +67,20 @@ try:
 except ValueError:
     OLLAMA_NUM_CTX = 4096
 
+# Laisser le modèle utiliser des outils (nécessite un modèle compatible)
+TOOLS_ENABLED: bool = os.environ.get("JARVIS_TOOLS", "on").lower() not in (
+    "off", "0", "non", "false"
+)
+
 # Anthropic (LLM cloud, optionnel)
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # Chemins des fichiers de données
-DATA_DIR: Path = ROOT / "data"
+# Dossier des données (mémoire, tâches...) — modifiable avec JARVIS_DATA_DIR
+DATA_DIR: Path = Path(os.environ.get("JARVIS_DATA_DIR") or ROOT / "data")
 MEMORY_DB: Path = DATA_DIR / "memory.db"
 LOGS_DIR: Path = ROOT / "logs"
 
 # Créer les dossiers si ils n'existent pas
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)

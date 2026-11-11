@@ -244,3 +244,198 @@ def test_brain_fixture_does_not_touch_real_database(tmp_path, monkeypatch):
     monkeypatch.setattr(core.memory.LongTermMemory, "__init__", spy)
     Brain(long_term=core.memory.LongTermMemory(tmp_path / "m.db"))
     assert settings.MEMORY_DB not in opened
+
+
+# ─────────────────────────────────────────────
+# Conversation avec le LLM (faux serveur Ollama)
+# ─────────────────────────────────────────────
+
+from tests.fake_ollama import FakeOllama  # noqa: E402
+from llm.ollama import Ollama  # noqa: E402
+
+
+@pytest.fixture
+def ollama_server():
+    with FakeOllama() as fake:
+        yield fake
+
+
+@pytest.fixture
+def llm_brain(ollama_server, tmp_path):
+    llm = Ollama(host=ollama_server.url, model="mistral")
+    return Brain(llm=llm, long_term=LongTermMemory(db_path=tmp_path / "m.db"))
+
+
+def test_process_streams_and_keeps_history(llm_brain, ollama_server):
+    ollama_server.replies += [{"content": "Bonjour Houssen"}, {"content": "Oui"}]
+    tokens = []
+    assert llm_brain.process("Salut", on_token=tokens.append) == "Bonjour Houssen"
+    assert "".join(tokens) == "Bonjour Houssen"
+    llm_brain.process("Tu te souviens ?")
+    sent = ollama_server.requests[1]["messages"]
+    assert [m["role"] for m in sent] == ["system", "user", "assistant", "user"]
+    assert sent[1]["content"] == "Salut"
+
+
+def test_system_prompt_has_facts_and_date(llm_brain, ollama_server):
+    llm_brain.process("souviens-toi que j'aime le thé")
+    llm_brain.process("Que boire ?")
+    system = ollama_server.requests[0]["messages"][0]["content"]
+    assert "j'aime le thé" in system
+    assert "Nous sommes le" in system
+
+
+def test_llm_error_is_reported(tmp_path):
+    llm = Ollama(host="http://127.0.0.1:9", model="mistral")
+    brain = Brain(llm=llm, long_term=LongTermMemory(db_path=tmp_path / "m.db"))
+    assert "ollama serve" in brain.process("Bonjour")
+    assert brain.short_term.count() == 0
+
+
+def test_health(llm_brain, ollama_server, tmp_path):
+    assert llm_brain.health() is None
+    llm_brain.llm.model = "llama3.1"
+    assert "ollama pull llama3.1" in llm_brain.health()
+    down = Brain(llm=Ollama(host="http://127.0.0.1:9"),
+                 long_term=LongTermMemory(db_path=tmp_path / "d.db"))
+    assert "ollama serve" in down.health()
+
+
+# ─────────────────────────────────────────────
+# Étape 2 : boucle agent avec outils
+# ─────────────────────────────────────────────
+
+from tools.registry import ToolRegistry  # noqa: E402
+
+
+def _call(name, **arguments):
+    return {"function": {"name": name, "arguments": arguments}}
+
+
+def test_agent_uses_tool_then_answers(llm_brain, ollama_server):
+    seen = []
+    llm_brain.on_tool = lambda name, args: seen.append((name, args))
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("calculer", expression="3 * 45 / 60")]},
+        {"content": "Cela fait 2,25 heures."},
+    ]
+    tokens = []
+    answer = llm_brain.process("3 réunions de 45 min, ça fait combien d'heures ?",
+                               on_token=tokens.append)
+    assert answer == "Cela fait 2,25 heures."
+    assert seen == [("calculer", {"expression": "3 * 45 / 60"})]
+
+    first, second = ollama_server.requests
+    assert "calculer" in [t["function"]["name"] for t in first["tools"]]
+    assert "Outils :" in first["messages"][0]["content"]
+    tool_msg = second["messages"][-1]
+    assert tool_msg == {"role": "tool", "tool_name": "calculer",
+                        "content": "3 * 45 / 60 = 2.25"}
+    assert second["messages"][-2]["tool_calls"][0]["function"]["name"] == "calculer"
+    # Historique : seulement la question et la réponse finale
+    assert [m["role"] for m in llm_brain.short_term.get_history()] == ["user", "assistant"]
+
+
+def test_agent_memorises_with_tool(llm_brain, ollama_server):
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("memoriser", fait="ma sœur s'appelle Léa")]},
+        {"content": "C'est noté."},
+    ]
+    llm_brain.process("Ma sœur s'appelle Léa")
+    assert "ma sœur s'appelle Léa" in llm_brain.long_term.get_all().values()
+
+
+def test_agent_several_tools_in_one_step(llm_brain, ollama_server):
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("calculer", expression="1+1"),
+                                       _call("outil_inconnu")]},
+        {"content": "Fini"},
+    ]
+    assert llm_brain.process("x") == "Fini"
+    contents = [m["content"] for m in ollama_server.requests[1]["messages"] if m["role"] == "tool"]
+    assert contents[0] == "1+1 = 2"
+    assert "n'existe pas" in contents[1]
+
+
+def test_agent_stops_after_max_steps(llm_brain, ollama_server):
+    from core.brain import MAX_AGENT_STEPS
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("date_heure")]}
+    ] * MAX_AGENT_STEPS
+    assert "plus de" in llm_brain.process("boucle")
+    assert len(ollama_server.requests) == MAX_AGENT_STEPS
+
+
+def test_agent_falls_back_when_model_has_no_tools(tmp_path):
+    with FakeOllama(supports_tools=False) as fake:
+        fake.replies.append({"content": "Réponse sans outils"})
+        brain = Brain(llm=Ollama(host=fake.url, model="mistral"),
+                      long_term=LongTermMemory(db_path=tmp_path / "m.db"))
+        tokens = []
+        assert brain.process("Bonjour", on_token=tokens.append) == "Réponse sans outils"
+        assert brain.tools_enabled is False
+        assert "ne sait pas utiliser" in "".join(tokens)
+        assert "tools" not in fake.requests[-1]
+        assert "Outils :" in fake.requests[0]["messages"][0]["content"]
+        brain.process("Encore")
+        assert "Outils :" not in fake.requests[-1]["messages"][0]["content"]
+
+
+def test_agent_without_tools(ollama_server, tmp_path):
+    brain = Brain(llm=Ollama(host=ollama_server.url, model="mistral"),
+                  long_term=LongTermMemory(db_path=tmp_path / "m.db"),
+                  tools=ToolRegistry())
+    brain.process("Bonjour")
+    assert "tools" not in ollama_server.requests[0]
+    assert "Outils :" not in ollama_server.requests[0]["messages"][0]["content"]
+
+
+def test_agent_sensitive_tool_needs_confirmation(ollama_server, tmp_path):
+    reg = ToolRegistry()
+    done = []
+
+    @reg.tool(confirm=True)
+    def effacer_disque() -> str:
+        """Action dangereuse."""
+        done.append(1)
+        return "effacé"
+
+    brain = Brain(llm=Ollama(host=ollama_server.url, model="mistral"),
+                  long_term=LongTermMemory(db_path=tmp_path / "m.db"), tools=reg)
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("effacer_disque")]},
+        {"content": "Refusé"},
+    ]
+    brain.process("Nettoie complètement le disque")
+    assert done == []
+    refused = ollama_server.requests[1]["messages"][-1]["content"]
+    assert refused == "Action refusée par l'utilisateur."
+
+
+# ─────────────────────────────────────────────
+# Étape 3 : tâches, rappels, notes
+# ─────────────────────────────────────────────
+
+def test_direct_task_commands(brain):
+    assert brain.process("mes tâches") == "Aucune tâche."
+    brain.tasks.add_task("Payer le loyer")
+    assert "#1 Payer le loyer" in brain.process("Mes taches ?")
+    assert brain.process("mes rappels") == "Aucun rappel en attente."
+    brain.tasks.add_note("Code wifi : 1234")
+    assert "Code wifi" in brain.process("mes notes")
+
+
+def test_task_sentences_go_to_llm(brain):
+    assert brain._handle_memory_commands("Mes tâches de demain sont lourdes") is None
+
+
+def test_agent_creates_reminder(llm_brain, ollama_server):
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("creer_rappel", message="Appeler maman",
+                                             quand="dans 20 minutes")]},
+        {"content": "Je vous le rappellerai dans 20 minutes."},
+    ]
+    llm_brain.process("Rappelle-moi d'appeler maman dans 20 minutes")
+    reminders = llm_brain.tasks.pending_reminders()
+    assert [r.message for r in reminders] == ["Appeler maman"]
+    assert "Tâches, rappels et notes" in ollama_server.requests[0]["messages"][0]["content"]
