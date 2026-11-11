@@ -85,3 +85,24 @@ def test_format_result_integer(calc):
 
 def test_format_result_float(calc):
     assert calc.format_result(3.14) == "3.14"
+
+
+# ─────────────────────────────────────────────
+# Non-régression : erreurs qui faisaient planter Jarvis
+# ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("expression", [
+    "10 // 0",
+    "10 % 0",
+    "1e308 * 10",
+    "9 ** 9 ** 9",
+    "(-8) ** (1/3)",
+    "True + 1",
+])
+def test_errors_raise_calculator_error(calc, expression):
+    with pytest.raises(CalculatorError):
+        calc.evaluate(expression)
+
+
+def test_format_result_infinity_does_not_crash(calc):
+    assert calc.format_result(float("inf")) == "inf"
