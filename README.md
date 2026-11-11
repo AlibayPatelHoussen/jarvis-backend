@@ -11,7 +11,7 @@ Assistant IA personnel — Backend Python
 ## Installation
 
 ```bash
-git clone https://github.com/VOTRE_USERNAME/jarvis-backend.git
+git clone https://github.com/AlibayPatelHoussen/jarvis-backend.git
 cd jarvis-backend
 python -m venv .venv
 source .venv/bin/activate

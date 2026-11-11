@@ -6,10 +6,12 @@ Gère la mémoire court terme et long terme.
 """
 
 import re
-
+from tools.calculator import Calculator, CalculatorError
 from llm.ollama import Ollama, OllamaError
 from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
+from tools.weather import Weather, WeatherError
+from tools.news import News, NewsError
 
 
 SYSTEM_PROMPT = f"""Tu es Jarvis, un assistant IA personnel.
@@ -26,33 +28,68 @@ Règles :
 - Ne fabrique jamais d'informations
 """
 
-# Commandes de mémoire reconnues par le Brain
+# Commandes de mémoire reconnues par le Brain.
+# Les motifs sont ancrés en début de message (^) pour ne pas
+# déclencher une commande au milieu d'une phrase normale.
+# Ils sont appliqués sans tenir compte de la casse (re.IGNORECASE)
+# sur le message original, pour conserver la casse des faits.
+_END = r"\s*[.!?]*\s*$"  # ponctuation finale optionnelle
+
 REMEMBER_PATTERNS = [
-    r"souviens-toi que (.+)",
-    r"retiens que (.+)",
-    r"note que (.+)",
-    r"mémorise que (.+)",
+    r"^souviens-toi que (.+)",
+    r"^retiens que (.+)",
+    r"^note que (.+)",
+    r"^mémorise que (.+)",
 ]
 
 RECALL_PATTERNS = [
-    r"que sais-tu de moi",
-    r"qu'est-ce que tu sais de moi",
-    r"ce que tu sais de moi",
-    r"tes informations sur moi",
+    r"^que sais-tu de moi" + _END,
+    r"^qu'est-ce que tu sais de moi" + _END,
+    r"^(?:dis-moi )?ce que tu sais de moi" + _END,
+    r"^(?:quelles sont )?tes informations sur moi" + _END,
 ]
 
 FORGET_PATTERNS = [
-    r"oublie (.+)",
-    r"efface (.+)",
-    r"supprime (.+)",
+    r"^oublie (.+)",
+    r"^efface (.+)",
+    r"^supprime (.+)",
 ]
 
+# Vérifiés AVANT FORGET_PATTERNS : "oublie tout" et
+# "efface la conversation" correspondent aussi à "oublie/efface (.+)".
 CLEAR_PATTERNS = [
-    r"nouvelle conversation",
-    r"efface la conversation",
-    r"recommence",
-    r"oublie tout",
+    r"^nouvelle conversation" + _END,
+    r"^efface la conversation" + _END,
+    r"^recommence" + _END,
+    r"^oublie tout" + _END,
 ]
+
+# Outils : mêmes règles que les commandes mémoire (début de message,
+# ponctuation finale ignorée, casse conservée pour les villes).
+CALC_PATTERNS = [
+    r"^calcul(?:e|er)?\s+(.+)",
+    r"^combien (?:fait|font|vaut|valent)\s+(.+)",
+    r"^(?:résultat de|résous|résoudre)\s+(.+)",
+]
+_PLACE = r"(?:\s+(?:à|a|en|au|aux|de|du|pour)\s+(.+?))?"
+WEATHER_PATTERNS = [
+    r"^(?:la |quelle est la )?m[eé]t[eé]o" + _PLACE + _END,
+    r"^(?:quel temps fait-il|quel temps il fait|il fait quel temps)"
+    + _PLACE + _END,
+    r"^(?:la |quelle est la )?temp[eé]rature" + _PLACE + _END,
+]
+NEWS_PATTERNS = [
+    r"^(?:les |des )?actualit[eé]s?(?:\s+(.+?))?" + _END,
+    r"^(?:les |des )?news(?:\s+(.+?))?" + _END,
+    r"^(?:quoi de neuf|les nouvelles)(?:\s+(.+?))?" + _END,
+    r"^(?:les )?titres(?: du jour)?()" + _END,
+    r"^(?:le )?journal(?: du jour)?()" + _END,
+]
+
+
+def _clean(text: str) -> str:
+    """Retire les espaces et la ponctuation finale d'un fragment."""
+    return text.strip().rstrip(".!?").strip()
 
 
 class Brain:
@@ -65,10 +102,21 @@ class Brain:
         print(response)
     """
 
-    def __init__(self):
-        self.llm = Ollama()
+    def __init__(
+        self,
+        llm: Ollama = None,
+        long_term: LongTermMemory = None,
+    ):
+        """
+        Args:
+            llm       : Client LLM (défaut : Ollama())
+            long_term : Mémoire long terme (défaut : data/memory.db).
+                        Les tests passent une base temporaire pour ne
+                        pas toucher à la vraie mémoire.
+        """
+        self.llm = llm or Ollama()
         self.short_term = ShortTermMemory(max_messages=20)
-        self.long_term = LongTermMemory()
+        self.long_term = long_term or LongTermMemory()
 
     def process(self, message: str) -> str:
         """
@@ -119,36 +167,79 @@ class Brain:
             Une réponse string si c'est une commande mémoire.
             None si ce n'est pas une commande mémoire.
         """
-        msg_lower = message.lower()
+
+        flags = re.IGNORECASE
+
+        # "nouvelle conversation" — en premier, car "oublie tout"
+        # correspondrait sinon à la commande "oublie ..."
+        for pattern in CLEAR_PATTERNS:
+            if re.search(pattern, message, flags):
+                self.short_term.clear()
+                return "Conversation effacée. Repartons de zéro !"
 
         # "souviens-toi que..."
         for pattern in REMEMBER_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                fact = match.group(1).strip()
-                key = f"fact_{self.long_term.count() + 1}"
-                self.long_term.save(key, fact)
+                fact = _clean(match.group(1))
+                if not fact:
+                    continue
+                self.long_term.save(self._next_fact_key(), fact)
                 return f"Noté ! Je me souviendrai que {fact}."
 
         # "que sais-tu de moi ?"
         for pattern in RECALL_PATTERNS:
-            if re.search(pattern, msg_lower):
+            if re.search(pattern, message, flags):
                 return self._format_known_facts()
 
         # "oublie..."
         for pattern in FORGET_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                target = match.group(1).strip()
+                target = _clean(match.group(1))
+                if not target:
+                    continue
                 return self._forget_fact(target)
 
-        # "nouvelle conversation"
-        for pattern in CLEAR_PATTERNS:
-            if re.search(pattern, msg_lower):
-                self.short_term.clear()
-                return "Conversation effacée. Repartons de zéro !"
+        # Calcul mathématique — seulement s'il y a au moins un chiffre,
+        # sinon "résous ce problème" partirait à la calculatrice
+        for pattern in CALC_PATTERNS:
+            match = re.search(pattern, message, flags)
+            if match:
+                expression = _clean(match.group(1))
+                if not re.search(r"\d", expression):
+                    continue
+                return self._calculate(expression)
+
+        # Météo
+        for pattern in WEATHER_PATTERNS:
+            match = re.search(pattern, message, flags)
+            if match:
+                city = _clean(match.group(1)) if match.group(1) else None
+                return self._get_weather(city or None)
+
+        # Actualités
+        for pattern in NEWS_PATTERNS:
+            match = re.search(pattern, message, flags)
+            if match:
+                category_hint = _clean(match.group(1) or "")
+                return self._get_news(category_hint)
 
         return None
+
+    def _next_fact_key(self) -> str:
+        """
+        Génère une clé libre pour un nouveau fait.
+
+        On prend le plus grand numéro existant + 1 (et non le nombre
+        de faits + 1) : après une suppression, le compte baisse et
+        on écraserait un fait existant.
+        """
+        numbers = [
+            int(key[5:]) for key in self.long_term.get_all()
+            if key.startswith("fact_") and key[5:].isdigit()
+        ]
+        return f"fact_{max(numbers, default=0) + 1}"
 
     def _build_long_term_context(self) -> str:
         """
@@ -198,3 +289,31 @@ class Brain:
     def is_ready(self) -> bool:
         """Vérifie si Ollama est accessible."""
         return self.llm.is_available()
+
+    def _calculate(self, expression: str) -> str:
+        """Évalue une expression mathématique."""
+        calc = Calculator()
+        try:
+            result = calc.evaluate(expression)
+            return f"{expression} = {calc.format_result(result)}"
+        except CalculatorError as e:
+            return f"Je ne peux pas calculer ça : {e}"
+
+    def _get_weather(self, city: str = None) -> str:
+        """Récupère la météo actuelle."""
+        weather = Weather()
+        try:
+            return weather.get(city)
+        except WeatherError as e:
+            return f"Impossible d'obtenir la météo : {e}"
+
+    def _get_news(self, category_hint: str = "") -> str:
+        """Récupère les actualités."""
+        news = News()
+        try:
+            category = news.detect_category(
+                category_hint) if category_hint else "general"
+            articles = news.get_headlines(category=category, max_articles=5)
+            return news.format(articles, category)
+        except NewsError as e:
+            return f"Impossible d'obtenir les actualités : {e}"
