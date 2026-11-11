@@ -82,7 +82,7 @@ cet environnement (plugins, MCP, API HTTP).
 | Amélioration | Détail |
 |---|---|
 | Clés par application | `python start.py cles ajouter|liste|supprimer` : une clé révocable par application, avec rôle maximal, utilisateur et option « confiance » (parler au nom de ses utilisateurs, ex. Nexus). |
-| API compatible OpenAI | `/v1/models`, `/v1/chat/completions` (streaming ou non) : tout logiciel qui accepte une adresse OpenAI personnalisée parle à Jarvis, sans code. |
+| API au format standard (OpenAI) | `/v1/models`, `/v1/chat/completions` (streaming ou non) : tout logiciel qui accepte une adresse « OpenAI » personnalisée parle à Jarvis, sans code. Aucun compte OpenAI : c'est seulement le format des messages, tout reste sur ton serveur. |
 | Autorisations à distance | Une action sensible demandée depuis une application sans bouton de confirmation est mise en attente ; tu l'autorises depuis la page web, le résultat arrive en notification. |
 
 ## Étape 8 — Voix et notifications push

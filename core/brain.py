@@ -195,7 +195,7 @@ class Brain:
                        Les réponses des commandes directes ne passent pas
                        par on_token : elles sont seulement retournées.
             history  : Historique fourni par l'application appelante
-                       (ex. API compatible OpenAI). Il remplace la
+                       (ex. API au format standard OpenAI). Il remplace la
                        conversation en cours, qui n'est alors pas modifiée.
         """
         message = message.strip()
