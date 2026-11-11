@@ -15,6 +15,7 @@ Sources disponibles par catégorie :
 - international : RFI, France 24
 """
 
+import html
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -41,6 +42,14 @@ RSS_FEEDS = {
         ("RFI", "https://www.rfi.fr/fr/rss"),
         ("France 24", "https://www.france24.com/fr/rss"),
     ],
+}
+
+# Mots-clés (mots entiers) pour détecter la catégorie demandée
+CATEGORY_KEYWORDS = {
+    "tech": ["tech", "technos?", "technologies?", "informatique", "ia", "numérique"],
+    "sport": ["sports?", "foot", "football", "tennis", "rugby"],
+    "science": ["sciences?", "santé", "médecine", "recherche"],
+    "international": ["monde", "international(?:e|es)?", "étranger"],
 }
 
 HEADERS = {
@@ -127,7 +136,9 @@ class News:
         """
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=8) as resp:
-            content = resp.read().decode("utf-8", errors="replace")
+            # On passe les octets bruts : ElementTree lit l'encodage
+            # déclaré dans le flux (ex. ISO-8859-1) au lieu de forcer UTF-8
+            content = resp.read()
 
         root = ET.fromstring(content)
         articles = []
@@ -156,15 +167,12 @@ class News:
 
     def _clean_text(self, text: str) -> str:
         """Nettoie le texte HTML d'un article RSS."""
+        # Décoder toutes les entités HTML (&eacute;, &#8217;, &lt;...)
+        # AVANT de retirer les balises : les descriptions RSS contiennent
+        # souvent du HTML encodé (&lt;p&gt;...&lt;/p&gt;)
+        text = html.unescape(text)
         # Supprimer les balises HTML
         text = re.sub(r"<[^>]+>", "", text)
-        # Décoder les entités HTML basiques
-        text = text.replace("&amp;", "&")
-        text = text.replace("&lt;", "<")
-        text = text.replace("&gt;", ">")
-        text = text.replace("&quot;", '"')
-        text = text.replace("&#039;", "'")
-        text = text.replace("&apos;", "'")
         # Supprimer les espaces multiples
         text = re.sub(r"\s+", " ", text)
         return text.strip()
@@ -198,7 +206,10 @@ class News:
             lines.append(f"{i}. {article.title}")
             lines.append(f"   [{article.source}]")
             if article.description:
-                lines.append(f"   {article.description[:100]}...")
+                desc = article.description
+                if len(desc) > 100:
+                    desc = desc[:100].rstrip() + "..."
+                lines.append(f"   {desc}")
             lines.append("")
 
         return "\n".join(lines)
@@ -213,13 +224,10 @@ class News:
         Returns:
             Catégorie détectée
         """
-        text = text.lower()
-        if any(w in text for w in ["tech", "technologie", "informatique", "ia"]):
-            return "tech"
-        if any(w in text for w in ["sport", "foot", "football", "tennis"]):
-            return "sport"
-        if any(w in text for w in ["science", "santé", "médecine", "recherche"]):
-            return "science"
-        if any(w in text for w in ["monde", "international", "étranger"]):
-            return "international"
+        # Recherche par mot entier : avec une simple recherche de
+        # sous-chaîne, "ia" était trouvé dans "sociales" ou "médias"
+        for category, keywords in CATEGORY_KEYWORDS.items():
+            pattern = r"\b(?:" + "|".join(keywords) + r")\b"
+            if re.search(pattern, text, re.IGNORECASE):
+                return category
         return "general"

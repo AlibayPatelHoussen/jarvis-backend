@@ -103,3 +103,61 @@ def test_get_headlines_max_articles(news):
     """get_headlines() ne doit pas dépasser max_articles."""
     articles = news.get_headlines("general", max_articles=3)
     assert len(articles) <= 3
+
+
+# ─────────────────────────────────────────────
+# Non-régression
+# ─────────────────────────────────────────────
+
+def test_clean_text_decodes_all_entities(news):
+    assert news._clean_text("L&#8217;été &eacute;tait chaud") == "L’été était chaud"
+
+
+def test_clean_text_removes_encoded_html(news):
+    text = "&lt;p&gt;Bonjour &lt;b&gt;monde&lt;/b&gt;&lt;/p&gt;"
+    assert news._clean_text(text) == "Bonjour monde"
+
+
+@pytest.mark.parametrize("text", ["sociales", "médias", "spécial", "initiatives"])
+def test_detect_category_matches_whole_words_only(news, text):
+    assert news.detect_category(text) == "general"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("IA", "tech"),
+    ("actualités de l'IA", "tech"),
+    ("Sports", "sport"),
+    ("du monde", "international"),
+    ("santé", "science"),
+])
+def test_detect_category_keywords(news, text, expected):
+    assert news.detect_category(text) == expected
+
+
+def test_format_adds_ellipsis_only_when_truncated(news):
+    short = news.format([Article("Titre court", "S", "Résumé court")])
+    assert "Résumé court..." not in short
+    assert "Résumé court" in short
+    long = news.format([Article("Titre long", "S", "x" * 150)])
+    assert "x" * 100 + "..." in long
+
+
+def test_parse_feed_respects_declared_encoding(news, monkeypatch):
+    xml = (
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+        "<rss><channel><item><title>Été à Montréal</title></item></channel></rss>"
+    ).encode("iso-8859-1")
+
+    class FakeResponse:
+        def read(self):
+            return xml
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: FakeResponse())
+    articles = news._parse_feed("http://exemple.invalid/rss", "Test")
+    assert articles[0].title == "Été à Montréal"
