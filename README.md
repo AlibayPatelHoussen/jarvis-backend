@@ -28,7 +28,9 @@ cd /opt/jarvis && sudo bash scripts/install-server.sh
 ```
 
 Installe Ollama, le modèle et le service `jarvis`, puis affiche ta clé d'accès.
-Expose-le avec Cloudflare Tunnel et ouvre la page de chat depuis ton téléphone.
+Expose-le avec Cloudflare Tunnel et ouvre la page de chat depuis ton téléphone :
+tu peux lui **parler** (micro) et l'entendre répondre, et recevoir rappels et
+demandes d'autorisation en **notification**, même page fermée.
 Tout est expliqué dans [docs/SERVEUR.md](docs/SERVEUR.md) ; l'API est décrite
 dans [docs/API.md](docs/API.md).
 

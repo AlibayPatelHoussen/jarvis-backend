@@ -209,6 +209,18 @@ Une demande expire au bout d'une heure.
 Exécute (ou refuse) l'action et renvoie `{"approved": true, "result": "…"}`.
 `404` si la demande est inconnue, expirée ou appartient à un autre utilisateur.
 
+### Notifications push
+
+| Route | Corps | Rôle |
+|---|---|---|
+| `GET /api/push/key` | — | Clé publique VAPID (`{"publicKey": "…"}`) pour `pushManager.subscribe` |
+| `POST /api/push/subscribe` | `PushSubscription.toJSON()` du navigateur | Abonne cet appareil (services de push d'Apple, Google, Mozilla, Microsoft uniquement) |
+| `POST /api/push/unsubscribe` | `{"endpoint": "…"}` | Désabonne cet appareil |
+| `POST /api/push/test` | — | Envoie une notification de test (`{"sent": <nb d'appareils>}`) |
+
+Les notifications (`/api/notifications`) sont aussi envoyées en push à tous les
+appareils abonnés de l'utilisateur. Le service worker est servi sur `/sw.js`.
+
 ### `GET /api/history`
 
 Conversation en cours : `{"messages": [{"role": "user", "content": "…"}, …]}`

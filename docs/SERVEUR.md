@@ -96,6 +96,34 @@ Sur iPhone : *Partager → Sur l'écran d'accueil* pour l'avoir comme une app.
   OpenAI n'est utilisé : c'est seulement le format des messages, ton Jarvis répond. Les actions sensibles demandées depuis ces
   applications attendent ton accord dans la page web.
 
+### Parler à Jarvis et l'entendre
+
+- **Micro** (en bas à gauche) : tu parles, le texte s'écrit, puis il est envoyé
+  tout seul. La réponse est alors **lue à voix haute**.
+- **Haut-parleur** (en haut) : lit aussi les réponses aux messages écrits.
+- Tout passe par le navigateur du téléphone : rien à installer, pas de compte.
+  La reconnaissance vocale est celle du navigateur (sur iPhone, celle d'Apple) ;
+  la voix est celle de l'appareil.
+
+### Notifications sur le téléphone (même page fermée)
+
+Rappels et demandes d'autorisation arrivent en notification :
+
+1. **iPhone** : ouvre Jarvis dans Safari → *Partager* → *Sur l'écran d'accueil*,
+   puis ouvre Jarvis **depuis l'icône** (obligatoire sur iPhone, iOS 16.4 ou plus).
+   Android / ordinateur : directement dans le navigateur.
+2. Touche la **cloche** en haut, accepte les notifications : une notification de
+   test arrive.
+3. Touche la cloche à nouveau pour les couper sur cet appareil.
+
+Gratuit et sans compte : Jarvis chiffre chaque notification (standard Web Push)
+et la remet au service de push du navigateur (Apple, Google ou Mozilla), qui la
+livre à ton appareil. Mets ton e-mail dans `JARVIS_PUSH_CONTACT` (ex.
+`mailto:toi@exemple.com`) : il est transmis à ces services avec chaque envoi.
+La clé de signature est créée au premier démarrage
+(`/var/lib/jarvis/vapid_private.pem`) — ne la supprime pas, sinon il faut
+réactiver les notifications sur chaque appareil.
+
 ## 4. Mettre à jour
 
 ```bash

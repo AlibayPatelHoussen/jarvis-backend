@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from config import settings
 from core.approvals import ApprovalCenter
 from core.clients import ClientStore
+from core.push import PushError, PushService, PushStore, VapidKeys
 from core.sessions import NotificationCenter, Session, SessionError, SessionManager
 
 logger = logging.getLogger("jarvis.api")
@@ -57,6 +58,31 @@ class ChatRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     id: str
     approved: bool
+
+
+class PushKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscription(BaseModel):
+    """Abonnement fourni par le navigateur (PushSubscription.toJSON())."""
+    model_config = ConfigDict(extra="ignore")
+    endpoint: str
+    keys: PushKeys
+
+
+class PushEndpoint(BaseModel):
+    endpoint: str
+
+
+def _push_title(kind: str, message: str) -> tuple[str, str]:
+    """Titre et étiquette d'une notification push."""
+    if kind == "reminder":
+        return "⏰ Rappel", "rappel"
+    if message.startswith("Autorisation demandée"):
+        return "Jarvis demande une autorisation", "autorisation"
+    return "Jarvis", "info"
 
 
 class DecisionRequest(BaseModel):
@@ -118,6 +144,7 @@ def create_app(
     background: bool = False,
     clients: Optional[ClientStore] = None,
     approvals: Optional[ApprovalCenter] = None,
+    push: Optional[PushService] = None,
 ) -> FastAPI:
     """
     Construit l'application (paramétrable pour les tests).
@@ -126,11 +153,19 @@ def create_app(
         api_key    : clé principale (propriétaire, admin)
         clients    : clés par application (python start.py cles …)
         approvals  : actions sensibles en attente d'autorisation
+        push       : notifications push vers les téléphones / navigateurs
         background : True pour lancer la vérification des rappels
                      pendant que le serveur tourne.
     """
     if approvals is None:
         approvals = ApprovalCenter(notify=notifications.push if notifications else None)
+    if push and notifications and notifications.on_notify is None:
+        def send_push(note):
+            title, tag = _push_title(note.kind, note.message)
+            # Envoi en arrière-plan : ne jamais bloquer les rappels ni le chat
+            threading.Thread(target=push.send, name="jarvis-push", daemon=True,
+                             args=(note.user_id, title, note.message, "/", tag)).start()
+        notifications.on_notify = send_push
     if not api_key:
         raise ValueError("JARVIS_API_KEY est vide : le serveur refuse de démarrer sans clé.")
 
@@ -200,6 +235,19 @@ def create_app(
         return FileResponse(STATIC_DIR / "manifest.webmanifest",
                             media_type="application/manifest+json")
 
+    @app.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript",
+                            headers={"Cache-Control": "no-cache"})
+
+    @app.get("/icons/{name}", include_in_schema=False)
+    def icons(name: str):
+        path = STATIC_DIR / "icons" / name
+        if "/" in name or ".." in name or not path.is_file():
+            raise HTTPException(status_code=404)
+        return FileResponse(path, media_type="image/png",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
     @app.get("/health")
     def health():
         """État du service (sans clé : pour la supervision)."""
@@ -247,6 +295,34 @@ def create_app(
              "due_at": n.due_at.isoformat()}
             for n in items
         ]}
+
+    @app.get("/api/push/key")
+    def push_key(session: Session = Depends(session_for)):
+        """Clé publique VAPID pour s'abonner (null si le push est désactivé)."""
+        return {"publicKey": push.keys.public_key if push else None}
+
+    @app.post("/api/push/subscribe")
+    def push_subscribe(body: PushSubscription, session: Session = Depends(session_for)):
+        if not push:
+            raise HTTPException(status_code=503, detail="Notifications push désactivées.")
+        try:
+            push.store.add(session.user_id, body.endpoint, body.keys.p256dh, body.keys.auth)
+        except PushError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"ok": True}
+
+    @app.post("/api/push/unsubscribe")
+    def push_unsubscribe(body: PushEndpoint, session: Session = Depends(session_for)):
+        removed = push.store.remove(body.endpoint, session.user_id) if push else False
+        return {"ok": removed}
+
+    @app.post("/api/push/test")
+    def push_test(session: Session = Depends(session_for)):
+        if not push:
+            raise HTTPException(status_code=503, detail="Notifications push désactivées.")
+        sent = push.send(session.user_id, "Jarvis",
+                         "Les notifications fonctionnent sur cet appareil.", tag="test")
+        return {"sent": sent}
 
     @app.get("/api/approvals")
     def list_approvals(session: Session = Depends(session_for)):
@@ -444,7 +520,11 @@ def build_default_app() -> FastAPI:
     return create_app(sessions, settings.API_KEY, NotificationCenter(sessions),
                       confirm_timeout=settings.CONFIRM_TIMEOUT,
                       owner_name=settings.USER_NAME, background=True,
-                      clients=ClientStore(settings.DATA_DIR / "clients.db"))
+                      clients=ClientStore(settings.DATA_DIR / "clients.db"),
+                      push=PushService(PushStore(settings.DATA_DIR / "push.db"),
+                                       VapidKeys.load_or_create(
+                                           settings.DATA_DIR / "vapid_private.pem"),
+                                       settings.PUSH_CONTACT))
 
 
 def run(host: str = None, port: int = None) -> None:
