@@ -20,6 +20,7 @@ Opérations supportées :
 """
 
 import ast
+import math
 import operator
 
 
@@ -81,7 +82,20 @@ class Calculator:
                 f"Expression invalide : '{expression}'"
             )
 
-        return self._eval_node(tree.body)
+        try:
+            result = self._eval_node(tree.body)
+        except OverflowError:
+            raise CalculatorError("Résultat trop grand.")
+        except RecursionError:
+            raise CalculatorError("Expression trop complexe.")
+
+        # Ex : (-8) ** (1/3) donne un nombre complexe en Python
+        if isinstance(result, complex):
+            raise CalculatorError("Résultat non réel (nombre complexe).")
+        # Ex : 1e308 * 10 donne l'infini sans lever d'erreur
+        if not math.isfinite(result):
+            raise CalculatorError("Résultat trop grand.")
+        return result
 
     def _eval_node(self, node: ast.AST) -> float:
         """
@@ -92,7 +106,8 @@ class Calculator:
         """
         # Nombre (3, 3.14, etc.)
         if isinstance(node, ast.Constant):
-            if isinstance(node.value, (int, float)):
+            # bool est une sous-classe de int : True + 1 serait accepté
+            if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
                 return float(node.value)
             raise CalculatorError(
                 f"Type non autorisé : {type(node.value)}"
@@ -108,8 +123,8 @@ class Calculator:
             left = self._eval_node(node.left)
             right = self._eval_node(node.right)
 
-            # Vérifier la division par zéro
-            if op_type == ast.Div and right == 0:
+            # Vérifier la division par zéro (/, // et %)
+            if op_type in (ast.Div, ast.FloorDiv, ast.Mod) and right == 0:
                 raise CalculatorError("Division par zéro impossible.")
 
             return SAFE_OPERATORS[op_type](left, right)
@@ -135,6 +150,8 @@ class Calculator:
         Supprime le .0 si le résultat est un entier.
         Ex: 6.0 → "6", 3.14 → "3.14"
         """
+        if not math.isfinite(result):
+            return str(result)
         if result == int(result):
             return str(int(result))
         return str(round(result, 10))
