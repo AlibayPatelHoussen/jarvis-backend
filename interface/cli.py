@@ -72,6 +72,11 @@ def print_help() -> None:
     print("  actualités tech          → actualités tech")
     print("  actualités sport         → actualités sport")
     print()
+    print("  MACHINE ET FICHIERS")
+    print("  « comment va le serveur ? »  « quels conteneurs tournent ? »")
+    print("  « montre-moi les logs de jellyfin »  « cherche les .mkv dans Films »")
+    print("  « lis ce site : https://... »  (commandes et écritures : confirmation)")
+    print()
     print("  TÂCHES, RAPPELS, NOTES")
     print("  mes tâches / mes rappels / mes notes  → consulter")
     print("  « ajoute payer le loyer à mes tâches pour vendredi »")
@@ -83,6 +88,7 @@ def print_help() -> None:
     print("  /modele [nom]            → voir ou changer de modèle")
     print("  /voix on|off             → activer ou couper la voix")
     print("  /outils                  → outils que Jarvis utilise seul")
+    print("  /environnement           → ce que Jarvis sait de cette machine")
     print("  /effacer                 → effacer la conversation")
     print("  quit / exit              → quitter Jarvis")
     print_separator()
@@ -194,6 +200,10 @@ def _handle_slash_command(text: str, brain: Brain, voice: Voice) -> bool:
             print(f"  Outils que Jarvis peut utiliser seul{state} :")
             for line in tools.describe().splitlines():
                 print(f"  {line}")
+    elif name in ("environnement", "env", "systeme", "système"):
+        env = getattr(brain, "environment", None)
+        for line in (env.summary() if env else "Environnement inconnu.").splitlines():
+            print(f"  {line}")
     elif name in ("effacer", "clear", "nouveau"):
         brain.clear_conversation()
         print("  Conversation effacée.")

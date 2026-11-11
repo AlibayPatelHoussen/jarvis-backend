@@ -72,6 +72,18 @@ TOOLS_ENABLED: bool = os.environ.get("JARVIS_TOOLS", "on").lower() not in (
     "off", "0", "non", "false"
 )
 
+# Environnement local (étape 4)
+# Dossier où Jarvis peut lire et écrire des fichiers (défaut : dossier personnel)
+WORKSPACE: Path = Path(os.environ.get("JARVIS_WORKSPACE") or Path.home()).expanduser()
+# Autoriser l'outil "executer_commande" (chaque commande reste à confirmer)
+ALLOW_COMMANDS: bool = os.environ.get("JARVIS_ALLOW_COMMANDS", "on").lower() not in (
+    "off", "0", "non", "false"
+)
+try:
+    COMMAND_TIMEOUT: int = int(os.environ.get("JARVIS_COMMAND_TIMEOUT", "30"))
+except ValueError:
+    COMMAND_TIMEOUT = 30
+
 # Anthropic (LLM cloud, optionnel)
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 
