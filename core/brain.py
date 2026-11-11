@@ -64,21 +64,26 @@ CLEAR_PATTERNS = [
     r"^oublie tout" + _END,
 ]
 
+# Outils : mêmes règles que les commandes mémoire (début de message,
+# ponctuation finale ignorée, casse conservée pour les villes).
 CALC_PATTERNS = [
-    r"calcule?\s+(.+)",
-    r"combien\s+(?:fait|vaut)\s+(.+)",
-    r"(?:résultat|résoudre)\s+(.+)",
+    r"^calcul(?:e|er)?\s+(.+)",
+    r"^combien (?:fait|font|vaut|valent)\s+(.+)",
+    r"^(?:résultat de|résous|résoudre)\s+(.+)",
 ]
+_PLACE = r"(?:\s+(?:à|a|en|au|aux|de|du|pour)\s+(.+?))?"
 WEATHER_PATTERNS = [
-    r"m[eé]t[eé]o(?:\s+(?:à|a|en|de)\s+(.+))?",
-    r"(?:quel temps|il fait quel temps)(?:\s+(?:à|a|en)\s+(.+))?",
-    r"temp[eé]rature(?:\s+(?:à|a|en)\s+(.+))?",
+    r"^(?:la |quelle est la )?m[eé]t[eé]o" + _PLACE + _END,
+    r"^(?:quel temps fait-il|quel temps il fait|il fait quel temps)"
+    + _PLACE + _END,
+    r"^(?:la |quelle est la )?temp[eé]rature" + _PLACE + _END,
 ]
 NEWS_PATTERNS = [
-    r"actualit[eé]s?(?:\s+(.+))?",
-    r"(?:les |)news(?:\s+(.+))?",
-    r"(?:quoi de neuf|nouvelles)(?:\s+(.+))?",
-    r"(?:titres|journal)(?:\s+(.+))?",
+    r"^(?:les |des )?actualit[eé]s?(?:\s+(.+?))?" + _END,
+    r"^(?:les |des )?news(?:\s+(.+?))?" + _END,
+    r"^(?:quoi de neuf|les nouvelles)(?:\s+(.+?))?" + _END,
+    r"^(?:les )?titres(?: du jour)?()" + _END,
+    r"^(?:le )?journal(?: du jour)?()" + _END,
 ]
 
 
@@ -151,7 +156,6 @@ class Brain:
             Une réponse string si c'est une commande mémoire.
             None si ce n'est pas une commande mémoire.
         """
-        msg_lower = message.lower()
 
         flags = re.IGNORECASE
 
@@ -186,26 +190,28 @@ class Brain:
                     continue
                 return self._forget_fact(target)
 
-        # Calcul mathématique
+        # Calcul mathématique — seulement s'il y a au moins un chiffre,
+        # sinon "résous ce problème" partirait à la calculatrice
         for pattern in CALC_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                expression = match.group(1).strip()
+                expression = _clean(match.group(1))
+                if not re.search(r"\d", expression):
+                    continue
                 return self._calculate(expression)
 
         # Météo
         for pattern in WEATHER_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                city = match.group(1).strip() if match.group(1) else None
-                return self._get_weather(city)
+                city = _clean(match.group(1)) if match.group(1) else None
+                return self._get_weather(city or None)
 
         # Actualités
         for pattern in NEWS_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                category_hint = match.group(
-                    1).strip() if match.group(1) else ""
+                category_hint = _clean(match.group(1) or "")
                 return self._get_news(category_hint)
 
         return None

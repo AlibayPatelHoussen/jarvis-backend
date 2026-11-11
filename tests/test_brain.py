@@ -183,3 +183,53 @@ def test_remember_ignores_non_numeric_keys(brain):
     brain.process("souviens-toi que y")
     assert brain.long_term.get("fact_8") == "y"
     assert brain.long_term.count() == 3
+
+
+# ─────────────────────────────────────────────
+# Non-régression : routage des outils
+# ─────────────────────────────────────────────
+
+@pytest.fixture
+def routed(brain):
+    """Brain dont les outils réseau sont remplacés par des espions."""
+    brain._get_weather = lambda city=None: f"WEATHER:{city}"
+    brain._get_news = lambda hint="": f"NEWS:{hint}"
+    return brain
+
+
+@pytest.mark.parametrize("message", [
+    "J'ai des nouvelles de ma mère",
+    "Quelle température pour cuire un poulet ?",
+    "J'ai un calcul rénal",
+    "Le résultat du match ?",
+    "J'écris mon journal intime",
+    "Tu connais les news de Bloomberg ?",
+    "Résous ce problème de logique",
+    "La météorologie, c'est quoi ?",
+])
+def test_normal_sentences_do_not_trigger_tools(routed, message):
+    assert routed._handle_memory_commands(message) is None
+
+
+@pytest.mark.parametrize("message, expected", [
+    ("météo", "WEATHER:None"),
+    ("Météo à Paris ?", "WEATHER:Paris"),
+    ("Quel temps fait-il à Montréal", "WEATHER:Montréal"),
+    ("température à New York !", "WEATHER:New York"),
+    ("actualités", "NEWS:"),
+    ("Actualités tech ?", "NEWS:tech"),
+    ("les news sport", "NEWS:sport"),
+    ("quoi de neuf", "NEWS:"),
+    ("Les titres du jour", "NEWS:"),
+])
+def test_tool_commands_are_routed(routed, message, expected):
+    assert routed._handle_memory_commands(message) == expected
+
+
+@pytest.mark.parametrize("message, expected", [
+    ("calcule 15 * 7", "15 * 7 = 105"),
+    ("Combien fait 2+2 ?", "2+2 = 4"),
+    ("calcul (2 + 3) * 4.", "(2 + 3) * 4 = 20"),
+])
+def test_calc_commands(brain, message, expected):
+    assert brain.process(message) == expected
