@@ -1,21 +1,22 @@
 # Jarvis sur ton serveur
 
-Jarvis tourne sur le serveur comme un service, à côté d'Ollama (le modèle IA,
-gratuit et local). Tu lui parles depuis n'importe où avec ta page web
-`https://jarvis.<ton-domaine>`, sur téléphone comme sur ordinateur.
+Jarvis tourne sur le serveur comme un **service sans interface** (une API), à
+côté d'Ollama (le modèle IA, gratuit et local). Les interfaces sont des projets
+séparés qui parlent à cette API :
 
 ```
- Téléphone / PC ──HTTPS──► Cloudflare Tunnel ──► Jarvis (127.0.0.1:8765) ──► Ollama (127.0.0.1:11434)
-                                                     │
-                                                     └─► outils : état du serveur, Docker, fichiers,
-                                                         tâches, rappels, notes, web…
+ Nexus (page Jarvis) ─┐
+ App web Jarvis ──────┼──► API Jarvis (127.0.0.1:8765) ──► Ollama (127.0.0.1:11434)
+ Autres logiciels ────┘          │
+                                 └─► outils : état du serveur, Docker, fichiers,
+                                     tâches, rappels, notes, web…
 ```
 
-- Jarvis n'écoute **qu'en local** : rien n'est ouvert sur ta box, tout passe par le
-  tunnel Cloudflare que tu utilises déjà pour Nexus.
-- Une **clé d'accès** (générée à l'installation) protège la page web et l'API.
-- Toute action sensible (commande, écriture de fichier, redémarrage d'un conteneur)
-  affiche **Autoriser / Refuser** dans la page.
+- Jarvis n'écoute **qu'en local** par défaut.
+- Chaque interface a **sa clé d'accès** (révocable).
+- Toute action sensible (commande, écriture de fichier, redémarrage d'un
+  conteneur) demande une autorisation, que l'interface affiche.
+- Tu peux aussi lui parler **dans le terminal** du serveur.
 
 ## 1. Installer
 
@@ -32,10 +33,8 @@ Le script :
 1. installe Python et **Ollama** s'ils manquent ;
 2. télécharge le modèle : `qwen2.5:7b` (≥ 8 Go de RAM) ou `qwen2.5:3b` (moins de RAM) ;
 3. crée l'utilisateur système `jarvis` (sans droits root) ;
-4. crée l'environnement Python et `/opt/jarvis/.env` avec une **clé d'accès** ;
+4. crée l'environnement Python et `/opt/jarvis/.env` avec une **clé d'accès principale** ;
 5. installe et démarre le service `jarvis`, puis vérifie qu'il répond.
-
-À la fin, il affiche la clé d'accès : garde-la, la page web te la demandera.
 
 Options (avant `sudo bash …`, ex. `sudo MODEL=qwen2.5:3b bash scripts/install-server.sh`) :
 
@@ -49,80 +48,52 @@ Options (avant `sudo bash …`, ex. `sudo MODEL=qwen2.5:3b bash scripts/install-
 
 Le script peut être relancé : il garde le `.env` et la clé existants.
 
-## 2. Accéder à Jarvis depuis partout (Cloudflare Tunnel)
+## 2. Brancher une interface
 
-Ton tunnel expose déjà Nexus. Ajoute une entrée pour Jarvis dans la configuration
-du tunnel (souvent `/etc/cloudflared/config.yml`), **avant** la règle finale
-`http_status:404` :
+Crée **une clé par interface** :
 
-```yaml
-ingress:
-  - hostname: nexus.houssen-serveur.com
-    service: http://localhost:3001
-  - hostname: jarvis.houssen-serveur.com     # ← nouveau
-    service: http://localhost:8765
-  - service: http_status:404
+```bash
+cd /opt/jarvis
+# Nexus : parle au nom de chacun de ses utilisateurs (rôles admin / user)
+sudo -u jarvis .venv/bin/python start.py cles ajouter nexus --role admin --confiance
+# Une app web dédiée à Jarvis, ou un logiciel au format standard « OpenAI »
+sudo -u jarvis .venv/bin/python start.py cles ajouter app-jarvis
+sudo -u jarvis .venv/bin/python start.py cles liste
 ```
 
-Puis :
+- **Nexus** (même serveur) : son backend appelle `http://127.0.0.1:8765` avec la
+  clé `nexus` ; rien à exposer sur internet.
+- **App web séparée** : soit elle passe par son propre backend (comme Nexus), soit
+  le navigateur appelle Jarvis directement — expose alors Jarvis en HTTPS (tunnel
+  Cloudflare, ci-dessous) et autorise l'adresse de l'app dans `.env` :
+  `JARVIS_CORS_ORIGINS=https://jarvis-app.mondomaine.com`.
+- **Logiciel au format standard « OpenAI »** : adresse `…/v1`, clé `jv_…`, modèle
+  `jarvis`. Aucun compte OpenAI n'est utilisé : c'est seulement le format des
+  messages, ton Jarvis répond.
+
+La référence complète est dans [API.md](API.md) : chat en direct, autorisations,
+rappels, notifications push, voix (côté interface).
+
+### Exposer Jarvis sur internet (seulement si nécessaire)
+
+Uniquement pour une interface hébergée ailleurs qui appelle Jarvis directement.
+Dans la configuration du tunnel Cloudflare, **avant** la règle finale `http_status:404` :
+
+```yaml
+  - hostname: jarvis.houssen-serveur.com
+    service: http://localhost:8765
+```
 
 ```bash
 cloudflared tunnel route dns <nom-du-tunnel> jarvis.houssen-serveur.com
 sudo systemctl restart cloudflared
 ```
 
-Ouvre `https://jarvis.houssen-serveur.com`, entre la clé : c'est prêt.
-Sur iPhone : *Partager → Sur l'écran d'accueil* pour l'avoir comme une app.
+## 3. Parler à Jarvis dans le terminal du serveur
 
-> Les réponses arrivent en direct (Server-Sent Events) : Cloudflare les transmet
-> sans configuration particulière.
-
-## 3. Utiliser
-
-- **Page web** : `https://jarvis.<ton-domaine>` — conversation en direct, outils
-  affichés, boutons Autoriser / Refuser, rappels (notification du navigateur si
-  la page est ouverte).
-- **Terminal du serveur** (en SSH) :
-  ```bash
-  cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py
-  ```
-- **Autres applications** (téléphone, Nexus, logiciels qui parlent le format standard « OpenAI ») :
-  crée une clé par application, puis suis [API.md](API.md).
-  ```bash
-  cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py cles ajouter telephone
-  ```
-  Dans une application qui accepte une adresse « OpenAI » personnalisée : adresse
-  `https://jarvis.<ton-domaine>/v1`, clé `jv_…`, modèle `jarvis`. Aucun compte
-  OpenAI n'est utilisé : c'est seulement le format des messages, ton Jarvis répond. Les actions sensibles demandées depuis ces
-  applications attendent ton accord dans la page web.
-
-### Parler à Jarvis et l'entendre
-
-- **Micro** (en bas à gauche) : tu parles, le texte s'écrit, puis il est envoyé
-  tout seul. La réponse est alors **lue à voix haute**.
-- **Haut-parleur** (en haut) : lit aussi les réponses aux messages écrits.
-- Tout passe par le navigateur du téléphone : rien à installer, pas de compte.
-  La reconnaissance vocale est celle du navigateur (sur iPhone, celle d'Apple) ;
-  la voix est celle de l'appareil.
-
-### Notifications sur le téléphone (même page fermée)
-
-Rappels et demandes d'autorisation arrivent en notification :
-
-1. **iPhone** : ouvre Jarvis dans Safari → *Partager* → *Sur l'écran d'accueil*,
-   puis ouvre Jarvis **depuis l'icône** (obligatoire sur iPhone, iOS 16.4 ou plus).
-   Android / ordinateur : directement dans le navigateur.
-2. Touche la **cloche** en haut, accepte les notifications : une notification de
-   test arrive.
-3. Touche la cloche à nouveau pour les couper sur cet appareil.
-
-Gratuit et sans compte : Jarvis chiffre chaque notification (standard Web Push)
-et la remet au service de push du navigateur (Apple, Google ou Mozilla), qui la
-livre à ton appareil. Mets ton e-mail dans `JARVIS_PUSH_CONTACT` (ex.
-`mailto:toi@exemple.com`) : il est transmis à ces services avec chaque envoi.
-La clé de signature est créée au premier démarrage
-(`/var/lib/jarvis/vapid_private.pem`) — ne la supprime pas, sinon il faut
-réactiver les notifications sur chaque appareil.
+```bash
+cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py
+```
 
 ## 4. Mettre à jour
 
@@ -139,10 +110,12 @@ Tout est dans `/opt/jarvis/.env` (puis `sudo systemctl restart jarvis`) :
 | Variable | Rôle |
 |---|---|
 | `OLLAMA_MODEL` | Modèle utilisé (`ollama list` pour voir ceux installés) |
-| `JARVIS_API_KEY` | Clé d'accès. Pour la changer : `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `JARVIS_API_KEY` | Clé principale. Pour la changer : `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `JARVIS_WORKSPACE` | Dossier des fichiers accessibles à Jarvis |
 | `JARVIS_ALLOW_COMMANDS` | `off` pour interdire toute commande, même confirmée |
-| `JARVIS_DATA_DIR` | Mémoire, tâches, rappels, notes (`/var/lib/jarvis`) |
+| `JARVIS_CORS_ORIGINS` | Interfaces web autorisées à appeler l'API depuis le navigateur |
+| `JARVIS_PUSH_CONTACT` | E-mail transmis aux services de notifications push (`mailto:…`) |
+| `JARVIS_DATA_DIR` | Mémoire, tâches, rappels, notes, clés (`/var/lib/jarvis`) |
 
 ## 6. Sécurité
 
@@ -153,15 +126,18 @@ Tout est dans `/opt/jarvis/.env` (puis `sudo systemctl restart jarvis`) :
   les droits sur le dossier (ex. `sudo setfacl -R -m u:jarvis:rwX /media/notes`).
 - Le groupe `docker` donne beaucoup de pouvoir : mets `DOCKER_ACCESS=no` si tu
   préfères que Jarvis ne touche pas aux conteneurs.
-- Garde la clé secrète ; en cas de doute, change-la dans `.env` et redémarre.
+- Une clé par interface : en cas de doute, `start.py cles supprimer <nom>`.
 
 ## 7. Dépannage
 
 | Symptôme | Solution |
 |---|---|
-| Bandeau « Ollama n'est pas accessible » | `systemctl status ollama` puis `sudo systemctl restart ollama` |
-| Bandeau « Le modèle … n'est pas installé » | `ollama pull <modèle>` |
-| Page inaccessible depuis l'extérieur | `curl http://127.0.0.1:8765/health` sur le serveur ; vérifier l'entrée du tunnel et `systemctl status cloudflared` |
-| « Clé d'accès invalide » | Comparer avec `JARVIS_API_KEY` dans `/opt/jarvis/.env` |
+| `/health` indique « Ollama n'est pas accessible » | `systemctl status ollama` puis `sudo systemctl restart ollama` |
+| `/health` indique « Le modèle … n'est pas installé » | `ollama pull <modèle>` |
+| L'interface reçoit `401` | Vérifier sa clé (`start.py cles liste`) |
 | Réponses lentes | Modèle plus petit (`qwen2.5:3b`) ou `OLLAMA_NUM_CTX=2048` |
 | Journal | `journalctl -u jarvis -n 100` |
+
+```bash
+curl http://127.0.0.1:8765/health
+```

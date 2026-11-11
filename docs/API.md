@@ -1,8 +1,8 @@
 # API de Jarvis
 
-Référence de l'API HTTP du serveur (`python start.py --server`). Elle sert à la
-page web intégrée et servira à brancher Jarvis dans d'autres applications
-(Nexus…).
+Référence de l'API HTTP du serveur (`python start.py --server`). Jarvis n'a pas
+d'interface : Nexus, une app web dédiée ou d'autres logiciels sont des projets
+séparés qui utilisent cette API.
 
 Adresse par défaut : `http://127.0.0.1:8765` (voir [SERVEUR.md](SERVEUR.md)).
 
@@ -18,7 +18,7 @@ Deux sortes de clés :
 
 | Clé | Pour | Droits |
 |---|---|---|
-| `JARVIS_API_KEY` (dans `.env`) | Toi (la page web) | Propriétaire, admin, peut parler au nom d'autres utilisateurs |
+| `JARVIS_API_KEY` (dans `.env`) | Toi (tests, scripts) | Propriétaire, admin, peut parler au nom d'autres utilisateurs |
 | **Clé d'application** (`jv_…`) | Nexus, ton téléphone, un autre logiciel | Selon la clé : rôle maximal, utilisateur, « confiance » |
 
 **Une clé par application** : tu peux en retirer une sans toucher aux autres.
@@ -92,14 +92,14 @@ Elles peuvent parler à Jarvis sans aucun code :
 Routes : `GET /v1/models` et `POST /v1/chat/completions` (avec ou sans
 `"stream": true`, fin de flux `data: [DONE]`).
 
-- C'est **le même Jarvis** : mêmes outils, même mémoire, mêmes tâches que la page web.
+- C'est **le même Jarvis** : mêmes outils, même mémoire, mêmes tâches que dans tes interfaces.
 - L'historique envoyé par l'application est utilisé (20 derniers messages) ; la
-  conversation de la page web n'est pas modifiée.
+  conversation en cours (`/api/chat`) n'est pas modifiée.
 - Les messages `system` de l'application sont ignorés : Jarvis garde sa
   personnalité et ses règles de sécurité.
 - **Actions sensibles** (commande, redémarrage, écriture) : comme l'application
   n'a pas de bouton Autoriser, elles sont **mises en attente**. Jarvis répond
-  qu'il attend ton accord ; tu autorises depuis la page web (ou `/api/approvals`),
+  qu'il attend ton accord ; tu autorises depuis ton interface (`/api/approvals`),
   puis le résultat arrive en notification.
 
 Exemple avec la bibliothèque Python `openai` (elle sait parler ce format ; ici
@@ -219,7 +219,33 @@ Exécute (ou refuse) l'action et renvoie `{"approved": true, "result": "…"}`.
 | `POST /api/push/test` | — | Envoie une notification de test (`{"sent": <nb d'appareils>}`) |
 
 Les notifications (`/api/notifications`) sont aussi envoyées en push à tous les
-appareils abonnés de l'utilisateur. Le service worker est servi sur `/sw.js`.
+appareils abonnés de l'utilisateur. Le **service worker** (qui affiche la
+notification) fait partie de l'interface et est servi par elle ; le message reçu
+est un JSON `{"title", "body", "url", "tag"}`.
+
+Une interface qui a déjà son propre système de notifications (comme Nexus) peut
+plutôt interroger `/api/notifications` et les relayer.
+
+## Voix (côté interface)
+
+Jarvis travaille en texte. Une interface web peut ajouter la voix sans rien
+installer, avec les API du navigateur :
+
+- parler : `SpeechRecognition` (`webkitSpeechRecognition` sur Safari), `lang = "fr-FR"`,
+  puis envoyer le texte reconnu à `/api/chat` ;
+- écouter : `speechSynthesis.speak(new SpeechSynthesisUtterance(réponse))`, en
+  retirant d'abord le formatage (blocs de code, `**`, liens).
+
+## CORS (interface web hébergée ailleurs)
+
+Si le navigateur d'une interface appelle Jarvis directement (sans passer par son
+propre backend), autorise son adresse dans `.env` :
+
+```
+JARVIS_CORS_ORIGINS=https://jarvis-app.mondomaine.com
+```
+
+Plusieurs adresses : séparées par des virgules. La clé reste obligatoire.
 
 ### `GET /api/history`
 
@@ -240,7 +266,8 @@ demande d'autorisation, résultat d'une action autorisée) depuis le dernier app
                     "due_at": "2026-11-12T14:35:00"}]}
 ```
 
-La page web interroge cette route toutes les 20 secondes.
+Une interface peut interroger cette route régulièrement (ex. toutes les 20 s) ou
+utiliser les notifications push.
 
 ## Intégration dans une application (ex. Nexus)
 

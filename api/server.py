@@ -1,7 +1,10 @@
 """
 api/server.py
 =============
-Jarvis en mode serveur : une API HTTP + une page de chat web.
+Jarvis en mode serveur : une API HTTP, sans interface.
+
+Les interfaces (Nexus, une application web, le téléphone…) sont des
+projets séparés qui parlent à cette API.
 
 Lancement :
     python start.py --server            (ou : python -m api)
@@ -32,11 +35,11 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from config import settings
@@ -47,7 +50,6 @@ from core.sessions import NotificationCenter, Session, SessionError, SessionMana
 
 logger = logging.getLogger("jarvis.api")
 
-STATIC_DIR = Path(__file__).parent / "static"
 VERSION = "1.0.0"
 
 
@@ -145,6 +147,7 @@ def create_app(
     clients: Optional[ClientStore] = None,
     approvals: Optional[ApprovalCenter] = None,
     push: Optional[PushService] = None,
+    cors_origins: Optional[list[str]] = None,
 ) -> FastAPI:
     """
     Construit l'application (paramétrable pour les tests).
@@ -154,6 +157,8 @@ def create_app(
         clients    : clés par application (python start.py cles …)
         approvals  : actions sensibles en attente d'autorisation
         push       : notifications push vers les téléphones / navigateurs
+        cors_origins : adresses des interfaces web autorisées à appeler
+                     l'API directement depuis le navigateur
         background : True pour lancer la vérification des rappels
                      pendant que le serveur tourne.
     """
@@ -179,6 +184,15 @@ def create_app(
 
     app = FastAPI(title="Jarvis", version=VERSION, docs_url=None, redoc_url=None,
                   lifespan=lifespan)
+    if cors_origins:
+        # Une interface web hébergée ailleurs (ex. https://jarvis-app.mondomaine.com)
+        # peut appeler l'API depuis le navigateur. La clé reste obligatoire.
+        app.add_middleware(
+            CORSMiddleware, allow_origins=cors_origins, allow_credentials=False,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type", "X-Jarvis-User",
+                           "X-Jarvis-Name", "X-Jarvis-Role"],
+        )
     pending: dict[str, _PendingConfirm] = {}
     pending_lock = threading.Lock()
 
@@ -226,27 +240,12 @@ def create_app(
     # Routes publiques
     # ─────────────────────────────────────────
 
-    @app.get("/", include_in_schema=False)
-    def index():
-        return FileResponse(STATIC_DIR / "index.html")
-
-    @app.get("/manifest.webmanifest", include_in_schema=False)
-    def manifest():
-        return FileResponse(STATIC_DIR / "manifest.webmanifest",
-                            media_type="application/manifest+json")
-
-    @app.get("/sw.js", include_in_schema=False)
-    def service_worker():
-        return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript",
-                            headers={"Cache-Control": "no-cache"})
-
-    @app.get("/icons/{name}", include_in_schema=False)
-    def icons(name: str):
-        path = STATIC_DIR / "icons" / name
-        if "/" in name or ".." in name or not path.is_file():
-            raise HTTPException(status_code=404)
-        return FileResponse(path, media_type="image/png",
-                            headers={"Cache-Control": "public, max-age=86400"})
+    @app.get("/")
+    def root():
+        """Présentation (sans clé). Jarvis n'a pas d'interface : voir docs/API.md."""
+        return {"name": "Jarvis", "version": VERSION,
+                "description": "Assistant IA personnel — API (aucune interface ici)",
+                "health": "/health", "docs": "docs/API.md"}
 
     @app.get("/health")
     def health():
@@ -524,7 +523,8 @@ def build_default_app() -> FastAPI:
                       push=PushService(PushStore(settings.DATA_DIR / "push.db"),
                                        VapidKeys.load_or_create(
                                            settings.DATA_DIR / "vapid_private.pem"),
-                                       settings.PUSH_CONTACT))
+                                       settings.PUSH_CONTACT),
+                      cors_origins=settings.CORS_ORIGINS)
 
 
 def run(host: str = None, port: int = None) -> None:
