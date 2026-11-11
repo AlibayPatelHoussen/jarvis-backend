@@ -77,13 +77,26 @@ cet environnement (plugins, MCP, API HTTP).
 | Installation | `scripts/install-server.sh` (Ollama, modèle, utilisateur système, service systemd) et `scripts/update-server.sh`. Voir [SERVEUR.md](SERVEUR.md). |
 | API documentée | [API.md](API.md) : ce dont Nexus aura besoin pour intégrer Jarvis. |
 
-## Étape 7 — Intégration dans Nexus (plus tard)
+## Étape 7 — Se brancher partout ✅
 
-Le backend Nexus relaiera ses utilisateurs vers l'API de Jarvis (voir la fin
-d'[API.md](API.md)) ; Nexus pourra aussi exposer ses propres actions (lancer un
-film, scanner la bibliothèque…) comme outils de Jarvis.
+| Amélioration | Détail |
+|---|---|
+| Clés par application | `python start.py cles ajouter|liste|supprimer` : une clé révocable par application, avec rôle maximal, utilisateur et option « confiance » (parler au nom de ses utilisateurs, ex. Nexus). |
+| API compatible OpenAI | `/v1/models`, `/v1/chat/completions` (streaming ou non) : tout logiciel qui accepte une adresse OpenAI personnalisée parle à Jarvis, sans code. |
+| Autorisations à distance | Une action sensible demandée depuis une application sans bouton de confirmation est mise en attente ; tu l'autorises depuis la page web, le résultat arrive en notification. |
 
-## Étape 8 — Finitions
+## Étape 8 — Voix et notifications push
+
+Parler à Jarvis depuis le téléphone (micro du navigateur) et l'entendre répondre ;
+rappels et demandes d'autorisation en notification push, même page fermée.
+
+## Étape 9 — Intégration dans Nexus (plus tard, par toi)
+
+Le backend Nexus relaiera ses utilisateurs vers l'API de Jarvis avec une clé
+`--confiance` (voir la fin d'[API.md](API.md)) ; Nexus pourra aussi exposer ses
+propres actions (lancer un film, scanner la bibliothèque…) comme outils de Jarvis.
+
+## Étape 10 — Finitions
 
 | Amélioration | Détail |
 |---|---|

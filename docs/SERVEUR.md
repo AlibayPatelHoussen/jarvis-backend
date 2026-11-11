@@ -86,7 +86,14 @@ Sur iPhone : *Partager → Sur l'écran d'accueil* pour l'avoir comme une app.
   ```bash
   cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py
   ```
-- **API** pour d'autres applications (Nexus plus tard) : voir [API.md](API.md).
+- **Autres applications** (téléphone, Nexus, logiciels compatibles OpenAI) :
+  crée une clé par application, puis suis [API.md](API.md).
+  ```bash
+  cd /opt/jarvis && sudo -u jarvis .venv/bin/python start.py cles ajouter telephone
+  ```
+  Dans une application compatible OpenAI : adresse `https://jarvis.<ton-domaine>/v1`,
+  clé `jv_…`, modèle `jarvis`. Les actions sensibles demandées depuis ces
+  applications attendent ton accord dans la page web.
 
 ## 4. Mettre à jour
 

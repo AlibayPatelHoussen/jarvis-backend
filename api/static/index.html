@@ -304,16 +304,68 @@
     yes.focus();
   }
 
-  // ── Rappels ──
+  // ── Rappels et résultats ──
+  const skipNotice = new Set();
   async function pollNotifications() {
     if (!key) return;
     try {
       const res = await api("/api/notifications");
       const { notifications } = await res.json();
       for (const n of notifications) {
-        add("reminder", "⏰ Rappel : " + n.message);
+        if (n.kind === "reminder") {
+          add("reminder", "⏰ Rappel : " + n.message);
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("Rappel de Jarvis", { body: n.message });
+          }
+          continue;
+        }
+        // Autorisations : déjà affichées par pollApprovals (ou par le clic)
+        const ref = (n.message.match(/#\d+/) || [""])[0];
+        if (n.message.startsWith("Autorisation demandée") || skipNotice.has(ref)) {
+          if (n.message.startsWith("Autorisation demandée")) pollApprovals();
+          continue;
+        }
+        add("msg bot", format(n.message), true);
+      }
+    } catch {}
+  }
+
+  // ── Actions en attente (demandées depuis une autre application) ──
+  const shownApprovals = new Set();
+  async function pollApprovals() {
+    if (!key) return;
+    try {
+      const { approvals } = await (await api("/api/approvals")).json();
+      for (const a of approvals) {
+        if (shownApprovals.has(a.id)) continue;
+        shownApprovals.add(a.id);
+        const from = a.source ? ` (depuis ${escapeHtml(a.source)})` : "";
+        const card = add("confirm",
+          `<div><strong>Action en attente #${a.id}${from} :</strong></div>
+           <code>${escapeHtml(a.action)}</code>
+           <div class="actions"><button class="btn primary" type="button">Autoriser</button>
+           <button class="btn secondary" type="button">Refuser</button></div>`, true);
+        const [yes, no] = card.querySelectorAll("button");
+        const decide = async (approved) => {
+          yes.disabled = no.disabled = true;
+          (approved ? yes : no).textContent = approved ? "Autorisé" : "Refusé";
+          try {
+            const res = await api(`/api/approvals/${a.id}`,
+              { method: "POST", body: JSON.stringify({ approved }) });
+            if (res.ok) {
+              const { result } = await res.json();
+              add("msg bot", format(result), true);
+              // Le résultat est déjà affiché : on ignore la notification correspondante
+              skipNotice.add(`#${a.id}`);
+            } else {
+              add("notice", "Demande expirée.");
+            }
+          } catch {}
+        };
+        yes.onclick = () => decide(true);
+        no.onclick = () => decide(false);
         if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("Rappel de Jarvis", { body: n.message });
+          new Notification("Jarvis demande une autorisation", { body: a.action });
         }
       }
     } catch {}
@@ -348,6 +400,7 @@
     store.set(key);
     $("login").style.display = "none";
     await loadHistory();
+    pollApprovals();
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
@@ -394,6 +447,7 @@
   refreshHealth();
   setInterval(refreshHealth, 60000);
   setInterval(pollNotifications, 20000);
+  setInterval(pollApprovals, 10000);
   const saved = store.get();
   if (saved) login(saved); else showLogin();
 })();
