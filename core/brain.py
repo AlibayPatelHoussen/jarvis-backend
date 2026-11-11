@@ -26,33 +26,46 @@ Règles :
 - Ne fabrique jamais d'informations
 """
 
-# Commandes de mémoire reconnues par le Brain
+# Commandes de mémoire reconnues par le Brain.
+# Les motifs sont ancrés en début de message (^) pour ne pas
+# déclencher une commande au milieu d'une phrase normale.
+# Ils sont appliqués sans tenir compte de la casse (re.IGNORECASE)
+# sur le message original, pour conserver la casse des faits.
+_END = r"\s*[.!?]*\s*$"  # ponctuation finale optionnelle
+
 REMEMBER_PATTERNS = [
-    r"souviens-toi que (.+)",
-    r"retiens que (.+)",
-    r"note que (.+)",
-    r"mémorise que (.+)",
+    r"^souviens-toi que (.+)",
+    r"^retiens que (.+)",
+    r"^note que (.+)",
+    r"^mémorise que (.+)",
 ]
 
 RECALL_PATTERNS = [
-    r"que sais-tu de moi",
-    r"qu'est-ce que tu sais de moi",
-    r"ce que tu sais de moi",
-    r"tes informations sur moi",
+    r"^que sais-tu de moi" + _END,
+    r"^qu'est-ce que tu sais de moi" + _END,
+    r"^(?:dis-moi )?ce que tu sais de moi" + _END,
+    r"^(?:quelles sont )?tes informations sur moi" + _END,
 ]
 
 FORGET_PATTERNS = [
-    r"oublie (.+)",
-    r"efface (.+)",
-    r"supprime (.+)",
+    r"^oublie (.+)",
+    r"^efface (.+)",
+    r"^supprime (.+)",
 ]
 
+# Vérifiés AVANT FORGET_PATTERNS : "oublie tout" et
+# "efface la conversation" correspondent aussi à "oublie/efface (.+)".
 CLEAR_PATTERNS = [
-    r"nouvelle conversation",
-    r"efface la conversation",
-    r"recommence",
-    r"oublie tout",
+    r"^nouvelle conversation" + _END,
+    r"^efface la conversation" + _END,
+    r"^recommence" + _END,
+    r"^oublie tout" + _END,
 ]
+
+
+def _clean(text: str) -> str:
+    """Retire les espaces et la ponctuation finale d'un fragment."""
+    return text.strip().rstrip(".!?").strip()
 
 
 class Brain:
@@ -119,34 +132,39 @@ class Brain:
             Une réponse string si c'est une commande mémoire.
             None si ce n'est pas une commande mémoire.
         """
-        msg_lower = message.lower()
+        flags = re.IGNORECASE
+
+        # "nouvelle conversation" — en premier, car "oublie tout"
+        # correspondrait sinon à la commande "oublie ..."
+        for pattern in CLEAR_PATTERNS:
+            if re.search(pattern, message, flags):
+                self.short_term.clear()
+                return "Conversation effacée. Repartons de zéro !"
 
         # "souviens-toi que..."
         for pattern in REMEMBER_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                fact = match.group(1).strip()
+                fact = _clean(match.group(1))
+                if not fact:
+                    continue
                 key = f"fact_{self.long_term.count() + 1}"
                 self.long_term.save(key, fact)
                 return f"Noté ! Je me souviendrai que {fact}."
 
         # "que sais-tu de moi ?"
         for pattern in RECALL_PATTERNS:
-            if re.search(pattern, msg_lower):
+            if re.search(pattern, message, flags):
                 return self._format_known_facts()
 
         # "oublie..."
         for pattern in FORGET_PATTERNS:
-            match = re.search(pattern, msg_lower)
+            match = re.search(pattern, message, flags)
             if match:
-                target = match.group(1).strip()
+                target = _clean(match.group(1))
+                if not target:
+                    continue
                 return self._forget_fact(target)
-
-        # "nouvelle conversation"
-        for pattern in CLEAR_PATTERNS:
-            if re.search(pattern, msg_lower):
-                self.short_term.clear()
-                return "Conversation effacée. Repartons de zéro !"
 
         return None
 
