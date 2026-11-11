@@ -84,6 +84,20 @@ try:
 except ValueError:
     COMMAND_TIMEOUT = 30
 
+# Mode serveur (python start.py --server)
+# Clé d'accès obligatoire pour l'API et la page web
+API_KEY: str = os.environ.get("JARVIS_API_KEY", "")
+# 127.0.0.1 = accessible seulement depuis la machine (via un tunnel HTTPS)
+SERVER_HOST: str = os.environ.get("JARVIS_HOST", "127.0.0.1")
+try:
+    SERVER_PORT: int = int(os.environ.get("JARVIS_PORT", "8765"))
+except ValueError:
+    SERVER_PORT = 8765
+try:
+    CONFIRM_TIMEOUT: int = int(os.environ.get("JARVIS_CONFIRM_TIMEOUT", "120"))
+except ValueError:
+    CONFIRM_TIMEOUT = 120
+
 # Anthropic (LLM cloud, optionnel)
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 
@@ -95,4 +109,7 @@ LOGS_DIR: Path = ROOT / "logs"
 
 # Créer les dossiers si ils n'existent pas
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-LOGS_DIR.mkdir(exist_ok=True)
+try:
+    LOGS_DIR.mkdir(exist_ok=True)
+except OSError:  # dossier du code en lecture seule (installation serveur)
+    pass
