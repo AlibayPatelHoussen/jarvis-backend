@@ -7,9 +7,12 @@ Responsabilité unique : lire l'input utilisateur,
 envoyer au Brain, afficher la réponse (en direct).
 """
 
+from datetime import datetime, timedelta
+
 from core.brain import Brain
 from config import settings
 from interface.voice import VoiceOutput
+from tools.tasks import Reminder, ReminderScheduler, format_when
 
 try:  # Flèches haut/bas pour rappeler les messages précédents
     import readline  # noqa: F401
@@ -69,6 +72,12 @@ def print_help() -> None:
     print("  actualités tech          → actualités tech")
     print("  actualités sport         → actualités sport")
     print()
+    print("  TÂCHES, RAPPELS, NOTES")
+    print("  mes tâches / mes rappels / mes notes  → consulter")
+    print("  « ajoute payer le loyer à mes tâches pour vendredi »")
+    print("  « rappelle-moi d'appeler maman dans 20 minutes »")
+    print("  « note le code wifi : 1234 »")
+    print()
     print("  SYSTÈME")
     print("  /aide                    → afficher cette aide")
     print("  /modele [nom]            → voir ou changer de modèle")
@@ -97,11 +106,30 @@ def run() -> None:
         print("  actualités, mémoire) fonctionnent.")
         print()
 
+    # Rappels manqués pendant que Jarvis était fermé : affichés tout de
+    # suite, puis vérification en arrière-plan
+    for reminder in brain.tasks.pop_due_reminders():
+        _notify(reminder, voice, reprint_prompt=False)
+    scheduler = ReminderScheduler(brain.tasks, lambda r: _notify(r, voice)).start()
+
     try:
         _loop(brain, voice)
     finally:
+        scheduler.stop()
         # Laisser Jarvis finir sa phrase avant de quitter
         voice.shutdown()
+
+
+def _notify(reminder: Reminder, voice: "Voice", reprint_prompt: bool = True) -> None:
+    """Affiche (et dit) un rappel arrivé à échéance."""
+    late = ""
+    if reminder.due_at < datetime.now() - timedelta(minutes=1):
+        late = f" (prévu {format_when(reminder.due_at)})"
+    print(f"\n  *** RAPPEL : {reminder.message}{late} ***\n", flush=True)
+    if reprint_prompt:
+        # Le rappel arrive pendant que l'utilisateur tape : réafficher l'invite
+        print(f"{settings.USER_NAME} >>> ", end="", flush=True)
+    voice.say(f"Rappel : {reminder.message}")
 
 
 class Voice:

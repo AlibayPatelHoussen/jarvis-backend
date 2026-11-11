@@ -81,10 +81,13 @@ def test_print_help_contains_nouvelle_conversation(capsys):
 # Non-régression : démarrage sans Ollama
 # ─────────────────────────────────────────────
 
-def test_run_works_without_ollama(monkeypatch, capsys):
+def test_run_works_without_ollama(monkeypatch, capsys, tmp_path):
     from interface import cli
+    from tools.tasks import TaskStore
 
     class FakeBrain:
+        tasks = TaskStore(tmp_path / "t.db")
+
         def health(self):
             return "Ollama n'est pas accessible sur http://localhost:11434."
 
@@ -231,3 +234,18 @@ def test_confirm(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     assert cli._confirm("supprimer('a')") is True
     assert cli._confirm("supprimer('a')") is False
+
+
+def test_notify_shows_late_reminders(capsys):
+    from datetime import datetime, timedelta
+    from interface import cli
+    from tools.tasks import Reminder
+    voice = FakeVoice(enabled=True)
+    cli._notify(Reminder(1, "Appeler maman", datetime.now()), voice)
+    cli._notify(Reminder(2, "Poubelles", datetime.now() - timedelta(hours=1)), voice,
+                reprint_prompt=False)
+    out = capsys.readouterr().out
+    assert "*** RAPPEL : Appeler maman ***" in out
+    assert "*** RAPPEL : Poubelles (prévu aujourd'hui" in out or "(prévu hier" in out \
+        or "*** RAPPEL : Poubelles (prévu" in out
+    assert voice.said == ["Rappel : Appeler maman", "Rappel : Poubelles"]

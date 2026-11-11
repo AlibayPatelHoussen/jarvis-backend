@@ -11,6 +11,9 @@ from tools.calculator import Calculator, CalculatorError
 from llm.ollama import Ollama, OllamaError, OllamaToolsUnsupported
 from tools.builtin import register_builtin_tools
 from tools.registry import ConfirmCallback, ToolRegistry
+from tools.tasks import (
+    TaskStore, format_notes, format_reminders, format_tasks, register_task_tools,
+)
 from core.prompt import build_system_prompt
 from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
@@ -89,10 +92,19 @@ TOOLS_GUIDE = """Outils :
 - Si un outil renvoie une erreur, explique-la simplement ou réessaie
   avec d'autres arguments.
 - Quand l'utilisateur te donne une information personnelle durable,
-  enregistre-la avec l'outil memoriser."""
+  enregistre-la avec l'outil memoriser.
+- Tâches, rappels et notes : utilise les outils dédiés. Pour une date,
+  donne l'heure ISO (ex. 2026-11-12T09:00) ou une expression simple
+  comme "dans 10 minutes" ou "demain 9h"."""
 
 # Fonction appelée avant chaque exécution d'outil (affichage dans la CLI)
 ToolCallback = Callable[[str, dict], None]
+
+
+# Consultation directe (sans LLM) des tâches, rappels et notes
+TASKS_PATTERNS = [r"^(?:mes |les |liste des |ma liste de )?t[aâ]ches" + _END]
+REMINDERS_PATTERNS = [r"^(?:mes |les )?rappels" + _END]
+NOTES_PATTERNS = [r"^(?:mes |les )?notes" + _END]
 
 
 def _clean(text: str) -> str:
@@ -115,6 +127,7 @@ class Brain:
         llm: Ollama = None,
         long_term: LongTermMemory = None,
         tools: ToolRegistry = None,
+        tasks: TaskStore = None,
         confirm: ConfirmCallback = None,
         on_tool: ToolCallback = None,
     ):
@@ -126,6 +139,8 @@ class Brain:
                         pas toucher à la vraie mémoire.
             tools     : Outils utilisables par le modèle (défaut : outils
                         intégrés). ToolRegistry() vide = aucun outil.
+            tasks     : Tâches / rappels / notes (défaut : même base
+                        SQLite que la mémoire long terme).
             confirm   : Demande l'autorisation pour les outils sensibles.
                         Sans cette fonction, ils sont refusés.
             on_tool   : Prévenu avant chaque appel d'outil (affichage).
@@ -133,8 +148,10 @@ class Brain:
         self.llm = llm or Ollama()
         self.short_term = ShortTermMemory(max_messages=20)
         self.long_term = long_term or LongTermMemory()
+        self.tasks = tasks or TaskStore(self.long_term.db_path)
         if tools is None:
             tools = register_builtin_tools(ToolRegistry(), self.long_term)
+            register_task_tools(tools, self.tasks)
         self.tools = tools
         self.confirm = confirm
         self.on_tool = on_tool
@@ -275,6 +292,14 @@ class Brain:
                 if not target:
                     continue
                 return self._forget_fact(target)
+
+        # "mes tâches", "mes rappels", "mes notes"
+        if any(re.search(p, message, flags) for p in TASKS_PATTERNS):
+            return format_tasks(self.tasks.list_tasks())
+        if any(re.search(p, message, flags) for p in REMINDERS_PATTERNS):
+            return format_reminders(self.tasks.pending_reminders())
+        if any(re.search(p, message, flags) for p in NOTES_PATTERNS):
+            return format_notes(self.tasks.search_notes())
 
         # Calcul mathématique — seulement s'il y a au moins un chiffre,
         # sinon "résous ce problème" partirait à la calculatrice

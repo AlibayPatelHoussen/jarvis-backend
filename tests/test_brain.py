@@ -410,3 +410,32 @@ def test_agent_sensitive_tool_needs_confirmation(ollama_server, tmp_path):
     assert done == []
     refused = ollama_server.requests[1]["messages"][-1]["content"]
     assert refused == "Action refusée par l'utilisateur."
+
+
+# ─────────────────────────────────────────────
+# Étape 3 : tâches, rappels, notes
+# ─────────────────────────────────────────────
+
+def test_direct_task_commands(brain):
+    assert brain.process("mes tâches") == "Aucune tâche."
+    brain.tasks.add_task("Payer le loyer")
+    assert "#1 Payer le loyer" in brain.process("Mes taches ?")
+    assert brain.process("mes rappels") == "Aucun rappel en attente."
+    brain.tasks.add_note("Code wifi : 1234")
+    assert "Code wifi" in brain.process("mes notes")
+
+
+def test_task_sentences_go_to_llm(brain):
+    assert brain._handle_memory_commands("Mes tâches de demain sont lourdes") is None
+
+
+def test_agent_creates_reminder(llm_brain, ollama_server):
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("creer_rappel", message="Appeler maman",
+                                             quand="dans 20 minutes")]},
+        {"content": "Je vous le rappellerai dans 20 minutes."},
+    ]
+    llm_brain.process("Rappelle-moi d'appeler maman dans 20 minutes")
+    reminders = llm_brain.tasks.pending_reminders()
+    assert [r.message for r in reminders] == ["Appeler maman"]
+    assert "Tâches, rappels et notes" in ollama_server.requests[0]["messages"][0]["content"]
