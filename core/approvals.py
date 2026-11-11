@@ -3,8 +3,8 @@ core/approvals.py
 =================
 Actions sensibles en attente d'autorisation.
 
-Quand une application sans écran de confirmation (API compatible
-OpenAI, raccourci du téléphone...) demande une action sensible
+Quand une application sans écran de confirmation (API au format
+standard OpenAI, raccourci du téléphone...) demande une action sensible
 (commande, redémarrage d'un conteneur, écriture de fichier), Jarvis ne
 l'exécute pas : il la met en attente. Le propriétaire l'autorise ou la
 refuse depuis la page web (ou toute application branchée sur

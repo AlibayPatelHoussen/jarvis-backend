@@ -45,8 +45,8 @@ def manage_keys(args) -> int:
         print("\nClé (affichée une seule fois, gardez-la secrète) :\n")
         print(f"    {key}\n")
         print("À utiliser dans l'en-tête : Authorization: Bearer <clé>")
-        print("Pour une application compatible OpenAI : adresse https://<jarvis>/v1, "
-              "modèle « jarvis ».")
+        print("Application au format standard « OpenAI » (sans compte OpenAI) : "
+              "adresse https://<jarvis>/v1, modèle « jarvis ».")
         print("Prise en compte immédiate, sans redémarrer Jarvis.")
         return 0
 

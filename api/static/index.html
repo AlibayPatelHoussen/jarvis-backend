@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Jarvis">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f7cff'/%3E%3Ctext x='50' y='68' font-size='56' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='700'%3EJ%3C/text%3E%3C/svg%3E">
 <title>Jarvis</title>
 <style>
@@ -47,6 +48,18 @@
   .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .dot.ok { background: var(--ok); } .dot.ko { background: var(--danger); }
+  .round-btn {
+    width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  }
+  .round-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .mic {
+    width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  }
+  .mic[aria-pressed="true"] { background: var(--danger); color: #fff; border-color: var(--danger);
+    animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.08); } }
   .icon-btn {
     border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
     border-radius: 999px; padding: 7px 12px; font-size: 14px; min-height: 36px;
@@ -132,7 +145,10 @@
   }
   #login .error { color: var(--danger); font-size: 14px; min-height: 20px; margin-bottom: 8px; }
   #login .btn { width: 100%; }
-  @media (prefers-reduced-motion: reduce) { .msg.bot.typing::after { animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .msg.bot.typing::after, .mic[aria-pressed="true"] { animation: none; }
+  }
+  @media (max-width: 360px) { header { gap: 6px; } .round-btn { width: 36px; height: 36px; } }
 </style>
 </head>
 <body>
@@ -142,8 +158,14 @@
     <b>Jarvis</b>
     <span class="status"><span class="dot" id="dot"></span><span id="status">Connexion…</span></span>
   </div>
-  <button class="icon-btn" id="clear" type="button" title="Nouvelle conversation">Nouveau</button>
-  <button class="icon-btn" id="logout" type="button" title="Se déconnecter">Quitter</button>
+  <button class="round-btn" id="notify" type="button" aria-pressed="false"
+          aria-label="Notifications sur cet appareil" title="Notifications sur cet appareil"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>
+  <button class="round-btn" id="speak" type="button" aria-pressed="false"
+          aria-label="Lire les réponses à voix haute" title="Lire les réponses à voix haute"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg></button>
+  <button class="round-btn" id="clear" type="button" aria-label="Nouvelle conversation"
+          title="Nouvelle conversation"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button class="round-btn" id="logout" type="button" aria-label="Se déconnecter"
+          title="Se déconnecter"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
 </header>
 <div class="banner" id="banner" role="status"></div>
 
@@ -164,6 +186,8 @@
 
 <footer>
   <form id="form">
+    <button class="mic" id="mic" type="button" aria-label="Parler à Jarvis" title="Parler à Jarvis"
+            aria-pressed="false" hidden><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg></button>
     <textarea id="input" rows="1" placeholder="Écrire à Jarvis…" aria-label="Message"
               autocomplete="off" enterkeyhint="send"></textarea>
     <button class="send" id="send" type="submit" aria-label="Envoyer">↑</button>
@@ -190,6 +214,12 @@
   let busy = false;
 
   // ── Stockage local de la clé (peut échouer en navigation privée) ──
+  // Préférences de cet appareil (lecture à voix haute…)
+  const prefs = {
+    get(name) { try { return localStorage.getItem("jarvis-" + name); } catch { return null; } },
+    set(name, value) { try { localStorage.setItem("jarvis-" + name, value); } catch {} },
+  };
+
   const store = {
     get() { try { return localStorage.getItem("jarvis-key") || ""; } catch { return ""; } },
     set(v) { try { localStorage.setItem("jarvis-key", v); } catch {} },
@@ -231,8 +261,10 @@
   }
 
   // ── Conversation ──
-  async function sendMessage(text) {
+  async function sendMessage(text, viaVoice = false) {
     if (busy || !text.trim()) return;
+    stopSpeaking();
+    let finalResponse = "";
     busy = true; send.disabled = true;
     add("msg user", text);
     let bot = null, full = "";
@@ -272,6 +304,8 @@
             askConfirmation(data);
           } else if (kind === "error") {
             botBubble().textContent = data.message;
+          } else if (kind === "done") {
+            finalResponse = data.response || "";
           }
         }
       }
@@ -282,7 +316,10 @@
         bot.classList.remove("typing");
         if (!bot.textContent.trim()) bot.remove();
       }
-      busy = false; send.disabled = false; input.focus();
+      busy = false; send.disabled = false;
+      if (!viaVoice) input.focus();
+      // Réponse lue à voix haute si on a parlé, ou si la lecture est activée
+      if (finalResponse && (viaVoice || prefs.get("speak") === "on")) speak(finalResponse);
     }
   }
 
@@ -401,9 +438,7 @@
     $("login").style.display = "none";
     await loadHistory();
     pollApprovals();
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
+    refreshPushState();
     input.focus();
     return true;
   }
@@ -416,6 +451,133 @@
       }
     } catch {}
   }
+
+  // ── Voix : parler à Jarvis (micro) et l'entendre (synthèse vocale) ──
+  // Tout se fait dans le navigateur / le téléphone : rien à installer.
+  function cleanForSpeech(text) {
+    return text.replace(/```[\s\S]*?```/g, " (bloc de code) ")
+      .replace(/`([^`]*)`/g, "$1").replace(/\*\*([^*]*)\*\*/g, "$1")
+      .replace(/https?:\/\/\S+/g, "lien").replace(/[#*_>]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function stopSpeaking() {
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+  }
+  function speak(text) {
+    if (!("speechSynthesis" in window)) return;
+    stopSpeaking();
+    const utterance = new SpeechSynthesisUtterance(cleanForSpeech(text));
+    utterance.lang = "fr-FR";
+    const voice = speechSynthesis.getVoices().find((v) => v.lang && v.lang.startsWith("fr"));
+    if (voice) utterance.voice = voice;
+    speechSynthesis.speak(utterance);
+  }
+  const speakBtn = $("speak");
+  function refreshSpeakButton() {
+    speakBtn.setAttribute("aria-pressed", prefs.get("speak") === "on" ? "true" : "false");
+  }
+  speakBtn.hidden = !("speechSynthesis" in window);
+  speakBtn.addEventListener("click", () => {
+    const on = prefs.get("speak") !== "on";
+    prefs.set("speak", on ? "on" : "off");
+    refreshSpeakButton();
+    if (!on) stopSpeaking();
+    add("notice", on ? "Les réponses seront lues à voix haute." : "Lecture à voix haute coupée.");
+  });
+  refreshSpeakButton();
+
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = $("mic");
+  let recognition = null;
+  if (Recognition) mic.hidden = false;
+  mic.addEventListener("click", () => {
+    if (recognition) { recognition.stop(); return; }
+    stopSpeaking();
+    recognition = new Recognition();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    let finalText = "";
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const piece = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalText += piece; else interim += piece;
+      }
+      input.value = (finalText + interim).trim();
+      autosize();
+    };
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        add("notice", "Micro refusé : autorisez-le dans les réglages du navigateur.");
+      }
+    };
+    recognition.onend = () => {
+      recognition = null;
+      mic.setAttribute("aria-pressed", "false");
+      const text = input.value.trim();
+      if (text) { input.value = ""; autosize(); sendMessage(text, true); }
+    };
+    try {
+      recognition.start();
+      mic.setAttribute("aria-pressed", "true");
+    } catch { recognition = null; }
+  });
+
+  // ── Notifications push (même page fermée) ──
+  const notifyBtn = $("notify");
+  const pushSupported = "serviceWorker" in navigator && "PushManager" in window
+                        && "Notification" in window;
+  let swRegistration = null;
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").then((reg) => { swRegistration = reg; refreshPushState(); })
+      .catch(() => {});
+  }
+  function keyToBytes(base64) {
+    const padded = (base64 + "=".repeat((4 - base64.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+  }
+  async function refreshPushState() {
+    if (!swRegistration || !pushSupported) return;
+    const sub = await swRegistration.pushManager.getSubscription().catch(() => null);
+    notifyBtn.setAttribute("aria-pressed", sub ? "true" : "false");
+  }
+  notifyBtn.addEventListener("click", async () => {
+    if (!pushSupported || !swRegistration) {
+      add("notice", "Notifications non disponibles ici. Sur iPhone : Partager → Sur l'écran " +
+                    "d'accueil, puis ouvrez Jarvis depuis l'icône.");
+      return;
+    }
+    try {
+      const existing = await swRegistration.pushManager.getSubscription();
+      if (existing) {
+        await api("/api/push/unsubscribe", { method: "POST",
+                  body: JSON.stringify({ endpoint: existing.endpoint }) }).catch(() => {});
+        await existing.unsubscribe();
+        add("notice", "Notifications désactivées sur cet appareil.");
+        return refreshPushState();
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        add("notice", "Notifications refusées : autorisez-les dans les réglages.");
+        return;
+      }
+      const { publicKey } = await (await api("/api/push/key")).json();
+      if (!publicKey) { add("notice", "Notifications push désactivées sur le serveur."); return; }
+      add("notice", "Activation des notifications…");
+      // Le service de push du navigateur (Apple, Google, Mozilla) peut ne pas répondre
+      const timeout = new Promise((_, reject) => setTimeout(
+        () => reject(new Error("le service de notifications du navigateur ne répond pas")), 20000));
+      const sub = await Promise.race([swRegistration.pushManager.subscribe({
+        userVisibleOnly: true, applicationServerKey: keyToBytes(publicKey) }), timeout]);
+      const res = await api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
+      await api("/api/push/test", { method: "POST" });
+      add("notice", "Notifications activées : rappels et autorisations arriveront ici.");
+    } catch (e) {
+      add("notice", "Impossible d'activer les notifications : " + (e.message || e));
+    }
+    refreshPushState();
+  });
 
   // ── Événements ──
   $("form").addEventListener("submit", (e) => {

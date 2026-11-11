@@ -82,13 +82,17 @@ cet environnement (plugins, MCP, API HTTP).
 | Amélioration | Détail |
 |---|---|
 | Clés par application | `python start.py cles ajouter|liste|supprimer` : une clé révocable par application, avec rôle maximal, utilisateur et option « confiance » (parler au nom de ses utilisateurs, ex. Nexus). |
-| API compatible OpenAI | `/v1/models`, `/v1/chat/completions` (streaming ou non) : tout logiciel qui accepte une adresse OpenAI personnalisée parle à Jarvis, sans code. |
+| API au format standard (OpenAI) | `/v1/models`, `/v1/chat/completions` (streaming ou non) : tout logiciel qui accepte une adresse « OpenAI » personnalisée parle à Jarvis, sans code. Aucun compte OpenAI : c'est seulement le format des messages, tout reste sur ton serveur. |
 | Autorisations à distance | Une action sensible demandée depuis une application sans bouton de confirmation est mise en attente ; tu l'autorises depuis la page web, le résultat arrive en notification. |
 
-## Étape 8 — Voix et notifications push
+## Étape 8 — Voix et notifications push ✅
 
-Parler à Jarvis depuis le téléphone (micro du navigateur) et l'entendre répondre ;
-rappels et demandes d'autorisation en notification push, même page fermée.
+| Amélioration | Détail |
+|---|---|
+| Parler à Jarvis | Bouton micro : reconnaissance vocale du navigateur, envoi automatique, réponse lue à voix haute. |
+| L'entendre | Synthèse vocale de l'appareil ; bouton pour lire aussi les réponses écrites. |
+| Notifications push | Rappels et demandes d'autorisation sur le téléphone, même page fermée (Web Push standard, chiffré, sans compte ; sur iPhone depuis l'écran d'accueil). |
+| App sur l'écran d'accueil | Icônes PNG, manifeste et service worker : Jarvis s'installe comme une application. |
 
 ## Étape 9 — Intégration dans Nexus (plus tard, par toi)
 
