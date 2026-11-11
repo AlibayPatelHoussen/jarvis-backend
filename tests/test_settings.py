@@ -49,3 +49,9 @@ def test_root_is_correct():
     """ROOT doit pointer vers la racine du projet."""
     assert (settings.ROOT / "config").exists()
     assert (settings.ROOT / "core").exists()
+
+
+def test_default_ollama_num_ctx():
+    """Le contexte par défaut doit tenir le prompt + 20 messages."""
+    if "OLLAMA_NUM_CTX" not in os.environ:
+        assert settings.OLLAMA_NUM_CTX == 4096

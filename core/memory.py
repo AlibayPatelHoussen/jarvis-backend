@@ -14,9 +14,10 @@ Deux niveaux :
 """
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from config import settings
 
@@ -63,9 +64,10 @@ class ShortTermMemory:
             "content": content
         })
 
-        # Si on dépasse la limite, supprimer les plus anciens
-        # On supprime par paires (user + assistant) pour garder
-        # la cohérence de l'historique
+        # Si on dépasse la limite, supprimer les plus anciens.
+        # Le Brain ajoute toujours un message user puis un message
+        # assistant : avec une limite paire, l'historique commence
+        # donc toujours par un message user.
         if len(self._messages) > self.max_messages:
             self._messages = self._messages[-self.max_messages:]
 
@@ -131,9 +133,21 @@ class LongTermMemory:
                 )
             """)
 
-    def _connect(self) -> sqlite3.Connection:
-        """Ouvre une connexion SQLite."""
-        return sqlite3.connect(str(self.db_path))
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """
+        Ouvre une connexion SQLite, valide la transaction puis la ferme.
+
+        Attention : "with sqlite3.connect(...)" seul valide la
+        transaction mais NE ferme PAS la connexion (fuite de
+        connexions, fichier verrouillé sous Windows).
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def save(self, key: str, value: str) -> None:
         """
@@ -181,7 +195,7 @@ class LongTermMemory:
         """
         with self._connect() as conn:
             cursor = conn.execute(
-                "SELECT key, value FROM facts"
+                "SELECT key, value FROM facts ORDER BY created_at, rowid"
             )
             return {row[0]: row[1] for row in cursor.fetchall()}
 

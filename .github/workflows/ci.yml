@@ -32,16 +32,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Lancer les tests unitaires uniquement
+      # 4. Lancer les tests unitaires uniquement (une seule fois,
+      # avec les deux rapports de couverture)
       # (pas les tests d'intégration — Ollama n'est pas dispo sur GitHub)
       - name: Run unit tests
         run: |
-          pytest -v -m "not integration" --cov=. --cov-report=term-missing
-
-      # 5. Vérifier la couverture de code
-      - name: Coverage report
-        run: |
-          pytest -m "not integration" --cov=. --cov-report=xml
+          pytest -v -m "not integration" --cov=. --cov-report=term-missing --cov-report=xml
 
   lint:
     name: Code Quality
@@ -57,7 +53,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install linter
-        run: pip install flake8
+        run: pip install "flake8>=7.0.0"
 
       - name: Run flake8
         run: |

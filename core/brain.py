@@ -102,10 +102,21 @@ class Brain:
         print(response)
     """
 
-    def __init__(self):
-        self.llm = Ollama()
+    def __init__(
+        self,
+        llm: Ollama = None,
+        long_term: LongTermMemory = None,
+    ):
+        """
+        Args:
+            llm       : Client LLM (défaut : Ollama())
+            long_term : Mémoire long terme (défaut : data/memory.db).
+                        Les tests passent une base temporaire pour ne
+                        pas toucher à la vraie mémoire.
+        """
+        self.llm = llm or Ollama()
         self.short_term = ShortTermMemory(max_messages=20)
-        self.long_term = LongTermMemory()
+        self.long_term = long_term or LongTermMemory()
 
     def process(self, message: str) -> str:
         """

@@ -136,7 +136,10 @@ class Ollama:
             "options": {
                 "temperature": 0.7,
                 "num_predict": 1024,
-                "num_ctx": 2048,
+                # Taille du contexte (prompt système + 20 messages).
+                # Trop petite, Ollama coupe le DÉBUT : le prompt
+                # système et les faits connus sont perdus.
+                "num_ctx": settings.OLLAMA_NUM_CTX,
             }
         }).encode("utf-8")
 
