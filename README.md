@@ -34,6 +34,13 @@ Jarvis choisit seul ses outils (calcul, date, météo, actualités, mémoire) :
 de calcul. `/outils` liste ce qu'il sait faire. Il faut pour cela un modèle
 compatible avec les outils (qwen2.5, llama3.1, mistral v0.3).
 
+Au quotidien, Jarvis gère aussi **tâches, rappels et notes** :
+
+- « Ajoute payer le loyer à mes tâches pour vendredi 18h, c'est urgent »
+- « Rappelle-moi d'appeler maman dans 20 minutes » → notification dans le
+  terminal (et à voix haute) à l'heure dite, même si Jarvis était fermé
+- « Note le code wifi : 1234 » ; « mes tâches », « mes rappels », « mes notes »
+
 Pour ajouter une capacité, il suffit de déclarer une fonction Python :
 
 ```python

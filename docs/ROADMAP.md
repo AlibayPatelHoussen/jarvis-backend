@@ -37,7 +37,7 @@ cet environnement (plugins, MCP, API HTTP).
 | Repli automatique | Si le modèle ne gère pas les outils, Jarvis le signale et discute sans outils. |
 | Confirmation | Les outils sensibles demandent une confirmation (o/n) avant de s'exécuter. |
 
-## Étape 3 — Tâches quotidiennes
+## Étape 3 — Tâches quotidiennes ✅
 
 | Amélioration | Détail |
 |---|---|
