@@ -17,8 +17,10 @@ Installation :
 """
 
 import logging
+import queue
+import re
 import threading
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -43,25 +45,77 @@ class VoiceOutput:
         tts.speak("Bonjour !")
     """
 
-    def __init__(self, language: str = "fr"):
+    def __init__(
+        self,
+        language: str = "fr",
+        engine_factory: Optional[Callable] = None,
+    ):
         """
         Args:
-            language : Langue pour la voix ("fr" ou "en")
+            language       : Langue pour la voix ("fr" ou "en")
+            engine_factory : Fonction qui crée le moteur (défaut :
+                             pyttsx3.init). Sert surtout aux tests.
+
+        Pourquoi un thread dédié ?
+        pyttsx3 n'est pas thread-safe : le moteur doit être créé et
+        utilisé dans le MÊME thread (COM sous Windows), et deux
+        runAndWait() simultanés lèvent "run loop already started".
+        Un seul thread "parleur" lit une file d'attente : les réponses
+        sont dites une par une, dans l'ordre.
         """
         self.language = language
         self._engine = None
         self._available = False
-        self._lock = threading.Lock()
-        self._init_engine()
+        self._engine_factory = engine_factory
+        self._queue: queue.Queue = queue.Queue()
+        self._ready = threading.Event()
+        self._thread = threading.Thread(
+            target=self._worker, name="jarvis-tts", daemon=True
+        )
+        self._thread.start()
+        # Attendre la fin de l'initialisation pour connaître is_available
+        self._ready.wait(timeout=10)
+
+    def _worker(self) -> None:
+        """Thread unique qui possède le moteur et exécute la file."""
+        try:
+            self._init_engine()
+        finally:
+            self._ready.set()
+        if not self._available:
+            return
+
+        while True:
+            item = self._queue.get()
+            try:
+                if item is None:  # signal d'arrêt
+                    return
+                func, args = item
+                try:
+                    func(*args)
+                except Exception as e:
+                    logger.debug(f"[Voice] Erreur TTS : {e}")
+            finally:
+                self._queue.task_done()
+
+    def _submit(self, func: Callable, *args) -> bool:
+        """Ajoute une tâche à la file du thread parleur."""
+        if not self._available or not self._thread.is_alive():
+            return False
+        self._queue.put((func, args))
+        return True
 
     def _init_engine(self) -> None:
-        """Initialise le moteur pyttsx3."""
+        """Initialise le moteur (appelé dans le thread parleur)."""
         try:
-            import pyttsx3
-            self._engine = pyttsx3.init()
+            if self._engine_factory is not None:
+                self._engine = self._engine_factory()
+            else:
+                import pyttsx3
+                self._engine = pyttsx3.init()
 
             # Chercher une voix française
-            voices = self._engine.getProperty("voices")
+            voices = self._engine.getProperty("voices") or []
             french_voice = None
 
             for voice in voices:
@@ -89,48 +143,58 @@ class VoiceOutput:
         except Exception as e:
             logger.warning(f"[Voice] Erreur init TTS : {e}")
 
+    def _say(self, text: str) -> None:
+        """Dit le texte (exécuté dans le thread parleur)."""
+        self._engine.say(text)
+        self._engine.runAndWait()
+
     def speak(self, text: str) -> None:
         """
-        Fait parler Jarvis.
+        Fait parler Jarvis et attend la fin de la phrase.
 
         Args:
             text : Texte à dire
         """
-        if not self._available or not self._engine:
-            return
+        if self.speak_async(text):
+            self._queue.join()
 
+    def speak_async(self, text: str) -> bool:
+        """
+        Parle en arrière-plan sans bloquer l'interface.
+
+        Returns:
+            True si le texte a été mis en file d'attente.
+        """
         clean = self._clean_for_speech(text)
-        if not clean.strip():
-            return
-
-        try:
-            with self._lock:
-                self._engine.say(clean)
-                self._engine.runAndWait()
-        except Exception as e:
-            logger.debug(f"[Voice] Erreur TTS : {e}")
-
-    def speak_async(self, text: str) -> None:
-        """Parle en arrière-plan sans bloquer l'interface."""
-        t = threading.Thread(target=self.speak, args=(text,), daemon=True)
-        t.start()
+        if not clean:
+            return False
+        return self._submit(self._say, clean)
 
     def set_rate(self, rate: int) -> None:
         """Change la vitesse (80-300, défaut 165)."""
-        if self._engine:
-            self._engine.setProperty("rate", max(80, min(300, rate)))
+        self._submit(self._engine_set, "rate", max(80, min(300, rate)))
 
     def set_volume(self, volume: float) -> None:
         """Change le volume (0.0-1.0)."""
-        if self._engine:
-            self._engine.setProperty("volume", max(0.0, min(1.0, volume)))
+        self._submit(self._engine_set, "volume", max(0.0, min(1.0, volume)))
+
+    def _engine_set(self, name: str, value) -> None:
+        self._engine.setProperty(name, value)
+
+    def shutdown(self, timeout: float = 10.0) -> None:
+        """
+        Termine les phrases en cours puis arrête le thread parleur.
+        À appeler en quittant, sinon la dernière réponse est coupée.
+        """
+        if self._thread.is_alive():
+            self._queue.put(None)
+            self._thread.join(timeout=timeout)
 
     def _clean_for_speech(self, text: str) -> str:
         """
         Nettoie le texte pour la synthèse vocale.
         Supprime le markdown et les caractères spéciaux.
         """
-        import re
         text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
         text = re.sub(r"\*(.*?)\*", r"\1", text)
         text = re.sub(r"`(.*?)`", r"\1", text)

@@ -75,3 +75,44 @@ def test_print_help_contains_nouvelle_conversation(capsys):
     print_help()
     captured = capsys.readouterr()
     assert "nouvelle conversation" in captured.out
+
+
+# ─────────────────────────────────────────────
+# Non-régression : démarrage sans Ollama
+# ─────────────────────────────────────────────
+
+def test_run_works_without_ollama(monkeypatch, capsys):
+    from interface import cli
+
+    class FakeBrain:
+        def is_ready(self):
+            return False
+
+        def process(self, message):
+            return f"echo:{message}"
+
+    class FakeVoice:
+        is_available = False
+        stopped = False
+
+        def shutdown(self):
+            FakeVoice.stopped = True
+
+    inputs = iter(["calcule 1 + 1", "quit"])
+    monkeypatch.setattr(cli, "Brain", FakeBrain)
+    monkeypatch.setattr(cli, "VoiceOutput", FakeVoice)
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    cli.run()
+    out = capsys.readouterr().out
+    assert "Ollama n'est pas accessible" in out
+    assert "echo:calcule 1 + 1" in out
+    assert FakeVoice.stopped
+
+
+def test_help_sections_are_separated(capsys):
+    from interface.cli import print_help
+    print_help()
+    out = capsys.readouterr().out
+    for section in ["CALCUL", "MÉTÉO", "ACTUALITÉS", "SYSTÈME"]:
+        assert f"\n\n  {section}" in out
