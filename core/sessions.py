@@ -5,9 +5,9 @@ Un Jarvis par utilisateur, pour le mode serveur.
 
 Chaque utilisateur a sa propre conversation, sa mémoire, ses tâches,
 rappels et notes (data/users/<id>/memory.db), et des outils selon son
-rôle ("admin" ou "user"). Aujourd'hui la page web utilise un seul
-utilisateur, "owner" (admin) ; une application hôte comme Nexus pourra
-plus tard transmettre l'identité de chacun de ses utilisateurs.
+rôle ("admin" ou "user"). La clé principale parle au nom du
+propriétaire ("owner", admin) ; une application de confiance comme
+Nexus transmet l'identité de chacun de ses utilisateurs.
 """
 
 import re
@@ -105,8 +105,8 @@ class Notification:
 class NotificationCenter:
     """
     Livre les rappels en mode serveur : vérifie les bases de tous les
-    utilisateurs et met les rappels échus en attente. La page web
-    (ou Nexus) les récupère avec GET /api/notifications.
+    utilisateurs et met les rappels échus en attente. Les interfaces
+    (Nexus…) les récupèrent avec GET /api/notifications.
     """
 
     def __init__(self, sessions: SessionManager, interval: float = 15.0,

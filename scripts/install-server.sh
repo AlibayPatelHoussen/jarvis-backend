@@ -52,7 +52,7 @@ echo "  code      : $APP_DIR"
 echo "  données   : $DATA_DIR"
 echo "  modèle    : $MODEL (RAM détectée : ${RAM_GB} Go)"
 echo "  fichiers  : $WORKSPACE"
-echo "  adresse   : http://127.0.0.1:$PORT (local, à exposer via Cloudflare Tunnel)"
+echo "  adresse   : http://127.0.0.1:$PORT (API locale, sans interface)"
 
 # ─── 1. Paquets système ─────────────────────────────────────────────
 step "Paquets système"
@@ -174,7 +174,7 @@ ok "Jarvis répond : $HEALTH"
 # ─── Résumé ─────────────────────────────────────────────────────────
 printf '\n\033[1;32m✅ Jarvis est installé et démarré.\033[0m\n\n'
 if [ -n "$NEW_KEY" ]; then
-  echo "Clé d'accès (à garder secrète, demandée par la page web) :"
+  echo "Clé d'accès principale (à garder secrète) :"
   printf '\n    \033[1m%s\033[0m\n\n' "$NEW_KEY"
   echo "Elle est aussi dans $ENV_FILE (JARVIS_API_KEY)."
 else
@@ -182,14 +182,14 @@ else
 fi
 cat <<EOF
 
-Pour l'utiliser partout, exposez-le avec votre tunnel Cloudflare
-(voir docs/SERVEUR.md) : ajoutez dans la configuration du tunnel
+Jarvis est une API sans interface. Pour brancher une interface (ex. Nexus),
+créez-lui une clé (voir docs/SERVEUR.md) :
 
-    - hostname: jarvis.votre-domaine.com
-      service: http://localhost:$PORT
+    cd $APP_DIR
+    sudo -u $SERVICE_USER .venv/bin/python start.py cles ajouter nexus --role admin --confiance
 
-puis : cloudflared tunnel route dns <nom-du-tunnel> jarvis.votre-domaine.com
-       sudo systemctl restart cloudflared
+Parler à Jarvis dans le terminal :
+    sudo -u $SERVICE_USER .venv/bin/python start.py
 
 Commandes utiles :
     systemctl status jarvis           état du service

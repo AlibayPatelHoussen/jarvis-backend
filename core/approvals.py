@@ -7,7 +7,7 @@ Quand une application sans écran de confirmation (API au format
 standard OpenAI, raccourci du téléphone...) demande une action sensible
 (commande, redémarrage d'un conteneur, écriture de fichier), Jarvis ne
 l'exécute pas : il la met en attente. Le propriétaire l'autorise ou la
-refuse depuis la page web (ou toute application branchée sur
+refuse depuis une interface (Nexus, ou toute application branchée sur
 /api/approvals), puis reçoit le résultat en notification.
 
 Une demande expire au bout de JARVIS_APPROVAL_TTL secondes (1 h).
