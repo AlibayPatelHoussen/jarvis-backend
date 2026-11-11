@@ -276,3 +276,139 @@ def test_role_change_keeps_conversation(setup):
     promoted = sessions.get("carla", "admin")
     assert promoted.role == "admin" and "executer_commande" in promoted.brain.tools
     assert promoted.brain.short_term.count() == 1
+
+
+# ─────────────────────────────────────────────
+# Étape 7 : clés d'application, autorisations, API OpenAI
+# ─────────────────────────────────────────────
+
+from core.clients import ClientStore  # noqa: E402
+
+
+@pytest.fixture
+def multi(ollama, tmp_path):
+    env = Environment(os_name="Linux", os_version="6", hostname="nexus", user="srv",
+                      shell="/bin/bash", cwd=tmp_path, workspace=tmp_path,
+                      programs={"conteneurs": ["docker"]})
+    sessions = SessionManager(tmp_path / "data", env,
+                              lambda: Ollama(host=ollama.url, model="qwen2.5:7b"))
+    notifications = NotificationCenter(sessions)
+    clients = ClientStore(tmp_path / "data" / "clients.db")
+    keys = {
+        "phone": clients.add("telephone"),
+        "guest": clients.add("invite", role="user", user="invite"),
+        "nexus": clients.add("nexus", role="admin", trusted=True),
+        "limited": clients.add("partenaire", role="user", trusted=True),
+    }
+    app = create_app(sessions, KEY, notifications, owner_name="Houssen", clients=clients)
+    return TestClient(app), keys, sessions
+
+
+def bearer(key, **extra):
+    return {"Authorization": f"Bearer {key}", **extra}
+
+
+def test_app_keys_identity_and_roles(multi):
+    client, keys, _ = multi
+    assert client.get("/api/me", headers=bearer(keys["phone"])).json() == \
+        {"user": "owner", "role": "admin", "name": "Houssen"}
+    assert client.get("/api/me", headers=bearer(keys["guest"])).json() == \
+        {"user": "invite", "role": "user", "name": "invite"}
+    # Une clé sans « confiance » ne parle pas au nom des autres
+    assert client.get("/api/me", headers=bearer(keys["phone"], **{"X-Jarvis-User": "42"})
+                      ).status_code == 403
+    # Nexus (confiance, admin) parle au nom de ses utilisateurs
+    alice = bearer(keys["nexus"], **{"X-Jarvis-User": "42", "X-Jarvis-Name": "Alice",
+                                     "X-Jarvis-Role": "admin"})
+    assert client.get("/api/me", headers=alice).json() == \
+        {"user": "42", "role": "admin", "name": "Alice"}
+    # Le rôle demandé ne dépasse jamais celui de la clé
+    capped = bearer(keys["limited"], **{"X-Jarvis-User": "7", "X-Jarvis-Role": "admin"})
+    assert client.get("/api/me", headers=capped).json()["role"] == "user"
+
+
+def test_revoked_key_stops_working(multi, tmp_path):
+    client, keys, sessions = multi
+    ClientStore(tmp_path / "data" / "clients.db").remove("telephone")
+    assert client.get("/api/me", headers=bearer(keys["phone"])).status_code == 401
+
+
+def test_openai_models_and_auth(multi):
+    client, keys, _ = multi
+    assert client.get("/v1/models").status_code == 401
+    data = client.get("/v1/models", headers=bearer(keys["phone"])).json()
+    assert data["data"][0]["id"] == "jarvis"
+
+
+def test_openai_chat_non_stream_is_stateless(multi, ollama):
+    client, keys, sessions = multi
+    ollama.replies.append({"content": "Bonjour Houssen !"})
+    body = {"model": "jarvis", "temperature": 0.2, "messages": [
+        {"role": "system", "content": "Tu es un pirate."},
+        {"role": "user", "content": "Salut"},
+        {"role": "assistant", "content": "Salut !"},
+        {"role": "user", "content": [{"type": "text", "text": "Ça va ?"}]},
+    ]}
+    data = client.post("/v1/chat/completions", json=body, headers=bearer(keys["phone"])).json()
+    assert data["object"] == "chat.completion"
+    assert data["choices"][0]["message"] == {"role": "assistant", "content": "Bonjour Houssen !"}
+    sent = ollama.requests[0]["messages"]
+    assert [m["role"] for m in sent] == ["system", "user", "assistant", "user"]
+    assert "pirate" not in sent[0]["content"] and sent[-1]["content"] == "Ça va ?"
+    # La conversation de la page web n'est pas modifiée
+    assert sessions.get("owner", "admin").brain.short_term.count() == 0
+
+
+def test_openai_chat_stream_format(multi, ollama):
+    client, keys, _ = multi
+    ollama.replies.append({"content": "un deux trois"})
+    body = {"messages": [{"role": "user", "content": "Compte"}], "stream": True}
+    text = client.post("/v1/chat/completions", json=body, headers=bearer(keys["phone"])).text
+    lines = [line[6:] for line in text.split("\n") if line.startswith("data: ")]
+    assert lines[-1] == "[DONE]"
+    chunks = [json.loads(line) for line in lines[:-1]]
+    assert chunks[0]["choices"][0]["delta"] == {"role": "assistant"}
+    content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+    assert content == "un deux trois"
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    assert all(c["object"] == "chat.completion.chunk" for c in chunks)
+
+
+def test_openai_rejects_bad_conversations(multi):
+    client, keys, _ = multi
+    for messages in [[], [{"role": "assistant", "content": "x"}],
+                     [{"role": "user", "content": "  "}]]:
+        response = client.post("/v1/chat/completions", json={"messages": messages},
+                               headers=bearer(keys["phone"]))
+        assert response.status_code == 400
+
+
+def test_sensitive_action_from_openai_waits_for_approval(multi, ollama):
+    client, keys, sessions = multi
+    ollama.replies += [
+        {"content": "", "tool_calls": [call("executer_commande", commande="echo prêt")]},
+        {"content": "J'attends ton autorisation."},
+    ]
+    body = {"messages": [{"role": "user", "content": "Lance echo prêt"}]}
+    answer = client.post("/v1/chat/completions", json=body, headers=bearer(keys["phone"]))
+    assert answer.json()["choices"][0]["message"]["content"] == "J'attends ton autorisation."
+    tool_msg = [m for m in ollama.requests[1]["messages"] if m["role"] == "tool"][0]
+    assert "mise en attente" in tool_msg["content"]
+
+    owner = bearer(keys["phone"])
+    pending = client.get("/api/approvals", headers=owner).json()["approvals"]
+    assert [(a["action"], a["source"]) for a in pending] == \
+        [("executer_commande(commande='echo prêt')", "telephone")]
+    # Un autre utilisateur ne voit pas et ne peut pas autoriser
+    guest = bearer(keys["guest"])
+    assert client.get("/api/approvals", headers=guest).json()["approvals"] == []
+    assert client.post(f"/api/approvals/{pending[0]['id']}", json={"approved": True},
+                       headers=guest).status_code == 404
+
+    decided = client.post(f"/api/approvals/{pending[0]['id']}", json={"approved": True},
+                          headers=owner).json()
+    assert decided["approved"] is True and "prêt" in decided["result"]
+    kinds = [(n["kind"], n["message"].split(" ")[0])
+             for n in client.get("/api/notifications", headers=owner).json()["notifications"]]
+    assert kinds == [("info", "Autorisation"), ("info", "Action")]
+    assert client.get("/api/approvals", headers=owner).json()["approvals"] == []

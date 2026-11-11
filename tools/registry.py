@@ -45,9 +45,31 @@ _JSON_TYPES = {
     dict: "object",
 }
 
+
+class ConfirmRequest(str):
+    """
+    Demande d'autorisation passée à la fonction de confirmation.
+
+    C'est une chaîne (le résumé lisible, ex. "executer_commande(commande='ls')")
+    qui transporte aussi l'outil, ses arguments et `run()` pour l'exécuter
+    plus tard : une demande venue d'une application sans écran de
+    confirmation peut ainsi être mise en attente puis autorisée ailleurs.
+    """
+
+    def __new__(cls, summary: str, tool: str, arguments: dict, run: Callable[[], str]):
+        obj = super().__new__(cls, summary)
+        obj.tool = tool
+        obj.arguments = arguments
+        obj.run = run
+        return obj
+
+
 # Fonction qui demande à l'utilisateur d'autoriser une action.
-# Reçoit une description de l'action, retourne True si autorisée.
-ConfirmCallback = Callable[[str], bool]
+# Reçoit une ConfirmRequest (une chaîne) et retourne :
+#   True  → l'outil s'exécute
+#   False → refusé
+#   str   → ce texte est renvoyé au modèle à la place (ex. "mise en attente")
+ConfirmCallback = Callable[[str], object]
 
 
 @dataclass
@@ -169,10 +191,22 @@ class ToolRegistry:
             return f"Erreur : {error}"
 
         if tool.confirm:
-            summary = f"{name}({_format_args(arguments)})"
-            if confirm is None or not confirm(summary):
+            request = ConfirmRequest(
+                f"{name}({_format_args(arguments)})", name, dict(arguments),
+                lambda: self._run(tool, arguments),
+            )
+            decision = confirm(request) if confirm is not None else False
+            if isinstance(decision, str):
+                return decision
+            if decision is not True:
                 return "Action refusée par l'utilisateur."
 
+        return self._run(tool, arguments)
+
+    @staticmethod
+    def _run(tool: Tool, arguments: dict) -> str:
+        """Exécute l'outil (arguments déjà vérifiés) et formate le résultat."""
+        name = tool.name
         try:
             result = tool.func(**arguments)
         except Exception as e:

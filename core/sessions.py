@@ -59,6 +59,10 @@ class SessionManager:
     def get(self, user_id: str, role: str = "user", name: Optional[str] = None) -> Session:
         if role not in ("admin", "user"):
             raise SessionError(f"rôle invalide : {role!r}")
+        # Seul le propriétaire prend le prénom de JARVIS_USER_NAME par défaut ;
+        # un autre utilisateur sans prénom est désigné par son identifiant.
+        if not name and user_id != "owner":
+            name = user_id
         with self._lock:
             session = self._sessions.get(user_id)
             # Un changement de rôle (ex. promu admin) reconstruit les outils
@@ -94,6 +98,8 @@ class Notification:
     user_id: str
     message: str
     due_at: datetime
+    # "reminder" (rappel arrivé à échéance) ou "info" (résultat d'une action…)
+    kind: str = "reminder"
 
 
 class NotificationCenter:
@@ -134,6 +140,19 @@ class NotificationCenter:
                 self.on_notify(note)
             except Exception:
                 pass
+
+    def push(self, user_id: str, message: str) -> Notification:
+        """Ajoute une notification immédiate (ex. résultat d'une action autorisée)."""
+        with self._lock:
+            note = Notification(self._next_id, user_id, message, datetime.now(), "info")
+            self._next_id += 1
+            self._pending.setdefault(user_id, []).append(note)
+        if self.on_notify:
+            try:
+                self.on_notify(note)
+            except Exception:
+                pass
+        return note
 
     def pop(self, user_id: str) -> list[Notification]:
         with self._lock:

@@ -28,16 +28,20 @@ import json
 import logging
 import queue
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from config import settings
+from core.approvals import ApprovalCenter
+from core.clients import ClientStore
 from core.sessions import NotificationCenter, Session, SessionError, SessionManager
 
 logger = logging.getLogger("jarvis.api")
@@ -55,6 +59,49 @@ class ConfirmRequest(BaseModel):
     approved: bool
 
 
+class DecisionRequest(BaseModel):
+    approved: bool
+
+
+class OpenAIChatRequest(BaseModel):
+    """Requête au format OpenAI (les champs inconnus sont ignorés)."""
+    model_config = ConfigDict(extra="ignore")
+    model: str = "jarvis"
+    messages: list[dict]
+    stream: bool = False
+
+
+@dataclass
+class Caller:
+    """Qui appelle : la session de l'utilisateur et l'application."""
+    session: Session
+    client: str
+
+
+def _text_of(content) -> str:
+    """Contenu d'un message OpenAI : texte simple ou liste de morceaux."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    return ""
+
+
+def openai_to_jarvis(messages: list[dict]) -> tuple[list[dict], str]:
+    """
+    Convertit une conversation OpenAI en (historique, dernier message).
+
+    Les messages "system" de l'application sont ignorés : Jarvis garde
+    sa propre personnalité et ses consignes de sécurité.
+    """
+    turns = [{"role": m.get("role"), "content": _text_of(m.get("content"))}
+             for m in messages if m.get("role") in ("user", "assistant")]
+    if not turns or turns[-1]["role"] != "user" or not turns[-1]["content"].strip():
+        raise HTTPException(status_code=400,
+                            detail="Le dernier message doit venir de l'utilisateur.")
+    return turns[:-1][-20:], turns[-1]["content"]
+
+
 class _PendingConfirm:
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -69,14 +116,21 @@ def create_app(
     confirm_timeout: float = 120.0,
     owner_name: str = "",
     background: bool = False,
+    clients: Optional[ClientStore] = None,
+    approvals: Optional[ApprovalCenter] = None,
 ) -> FastAPI:
     """
     Construit l'application (paramétrable pour les tests).
 
     Args:
+        api_key    : clé principale (propriétaire, admin)
+        clients    : clés par application (python start.py cles …)
+        approvals  : actions sensibles en attente d'autorisation
         background : True pour lancer la vérification des rappels
                      pendant que le serveur tourne.
     """
+    if approvals is None:
+        approvals = ApprovalCenter(notify=notifications.push if notifications else None)
     if not api_key:
         raise ValueError("JARVIS_API_KEY est vide : le serveur refuse de démarrer sans clé.")
 
@@ -97,21 +151,41 @@ def create_app(
     # Authentification et identité
     # ─────────────────────────────────────────
 
-    def session_for(
+    def caller_for(
         authorization: str = Header(default=""),
         x_jarvis_user: str = Header(default=""),
         x_jarvis_name: str = Header(default=""),
         x_jarvis_role: str = Header(default=""),
-    ) -> Session:
-        token = authorization[7:] if authorization.startswith("Bearer ") else ""
-        if not token or not hmac.compare_digest(token.encode(), api_key.encode()):
-            raise HTTPException(status_code=401, detail="Clé d'accès invalide.")
+    ) -> Caller:
+        token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+        if token and hmac.compare_digest(token.encode(), api_key.encode()):
+            client, max_role, trusted, user = "principal", "admin", True, "owner"
+        else:
+            app_client = clients.authenticate(token) if (clients and token) else None
+            if app_client is None:
+                raise HTTPException(status_code=401, detail="Clé d'accès invalide.")
+            client, max_role = app_client.name, app_client.role
+            trusted, user = app_client.trusted, app_client.user
+
+        role, name = max_role, (owner_name if user == "owner" else "")
+        if x_jarvis_user:
+            if not trusted:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cette clé ne peut pas parler au nom d'autres utilisateurs.")
+            user, name = x_jarvis_user, x_jarvis_name
+            requested = x_jarvis_role or "user"
+            if requested not in ("admin", "user"):
+                raise HTTPException(status_code=400, detail=f"rôle invalide : {requested!r}")
+            # Le rôle demandé ne dépasse jamais celui de la clé
+            role = "admin" if (requested == "admin" and max_role == "admin") else "user"
         try:
-            if x_jarvis_user:
-                return sessions.get(x_jarvis_user, x_jarvis_role or "user", x_jarvis_name)
-            return sessions.get("owner", "admin", owner_name)
+            return Caller(sessions.get(user, role, name), client)
         except SessionError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    def session_for(caller: Caller = Depends(caller_for)) -> Session:
+        return caller.session
 
     # ─────────────────────────────────────────
     # Routes publiques
@@ -169,9 +243,116 @@ def create_app(
     def get_notifications(session: Session = Depends(session_for)):
         items = notifications.pop(session.user_id) if notifications else []
         return {"notifications": [
-            {"id": n.id, "message": n.message, "due_at": n.due_at.isoformat()}
+            {"id": n.id, "kind": n.kind, "message": n.message,
+             "due_at": n.due_at.isoformat()}
             for n in items
         ]}
+
+    @app.get("/api/approvals")
+    def list_approvals(session: Session = Depends(session_for)):
+        """Actions sensibles en attente d'autorisation."""
+        return {"approvals": [
+            {"id": a.id, "action": a.action, "source": a.source,
+             "created": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(a.created))}
+            for a in approvals.pending(session.user_id)
+        ]}
+
+    @app.post("/api/approvals/{approval_id}")
+    def decide_approval(approval_id: int, body: DecisionRequest,
+                        session: Session = Depends(session_for)):
+        """Autorise (exécute) ou refuse une action en attente."""
+        result = approvals.decide(approval_id, session.user_id, body.approved)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Demande inconnue ou expirée.")
+        return {"approved": body.approved, "result": result}
+
+    # ─────────────────────────────────────────
+    # API compatible OpenAI
+    # ─────────────────────────────────────────
+    # N'importe quelle application qui accepte « une adresse OpenAI
+    # personnalisée » peut parler à Jarvis : base_url = https://…/v1,
+    # clé = une clé d'application, modèle = "jarvis". Les actions
+    # sensibles sont mises en attente (pas d'écran de confirmation).
+
+    @app.get("/v1/models")
+    def openai_models(caller: Caller = Depends(caller_for)):
+        return {"object": "list", "data": [
+            {"id": "jarvis", "object": "model", "created": 0, "owned_by": "jarvis"}]}
+
+    @app.post("/v1/chat/completions")
+    def openai_chat(body: OpenAIChatRequest, caller: Caller = Depends(caller_for)):
+        history, message = openai_to_jarvis(body.messages)
+        session = caller.session
+        # Les applications OpenAI attendent une réponse : on patiente un peu
+        if not session.lock.acquire(timeout=60):
+            raise HTTPException(status_code=409,
+                                detail="Jarvis répond déjà à un autre message.")
+        brain = session.brain
+        completion_id = "chatcmpl-" + uuid.uuid4().hex[:24]
+        created = int(time.time())
+
+        def run(on_token=None) -> str:
+            brain.confirm = approvals.deferred_confirm(session.user_id, source=caller.client)
+            brain.on_tool = None
+            try:
+                return brain.process(message, on_token=on_token, history=history)
+            finally:
+                brain.confirm = None
+
+        if not body.stream:
+            try:
+                response = run()
+            finally:
+                session.lock.release()
+            return {
+                "id": completion_id, "object": "chat.completion", "created": created,
+                "model": "jarvis",
+                "choices": [{"index": 0, "finish_reason": "stop",
+                             "message": {"role": "assistant", "content": response}}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            }
+
+        chunks: queue.Queue = queue.Queue()
+
+        def chunk(delta: dict, finish=None) -> str:
+            data = {"id": completion_id, "object": "chat.completion.chunk",
+                    "created": created, "model": "jarvis",
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+            return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        def work():
+            try:
+                streamed = []
+
+                def on_token(text: str) -> None:
+                    streamed.append(text)
+                    chunks.put(chunk({"content": text}))
+
+                response = run(on_token)
+                if not streamed and response:
+                    chunks.put(chunk({"content": response}))
+            except Exception as e:
+                logger.exception("Erreur pendant une requête OpenAI")
+                chunks.put(chunk({"content": f"Erreur interne : {e}"}))
+            finally:
+                session.lock.release()
+                chunks.put(chunk({}, finish="stop"))
+                chunks.put("data: [DONE]\n\n")
+                chunks.put(None)
+
+        threading.Thread(target=work, name="jarvis-openai", daemon=True).start()
+        chunks.put(chunk({"role": "assistant"}))
+
+        def stream():
+            while True:
+                item = chunks.get()
+                if item is None:
+                    return
+                yield item
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
 
     @app.post("/api/chat/confirm")
     def confirm(body: ConfirmRequest, session: Session = Depends(session_for)):
@@ -260,7 +441,8 @@ def build_default_app() -> FastAPI:
     sessions = SessionManager(settings.DATA_DIR, discover(settings.WORKSPACE), Ollama)
     return create_app(sessions, settings.API_KEY, NotificationCenter(sessions),
                       confirm_timeout=settings.CONFIRM_TIMEOUT,
-                      owner_name=settings.USER_NAME, background=True)
+                      owner_name=settings.USER_NAME, background=True,
+                      clients=ClientStore(settings.DATA_DIR / "clients.db"))
 
 
 def run(host: str = None, port: int = None) -> None:
