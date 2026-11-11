@@ -6,6 +6,7 @@ Tests de l'API serveur (api/server.py) avec un faux Ollama.
 
 import json
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -412,3 +413,76 @@ def test_sensitive_action_from_openai_waits_for_approval(multi, ollama):
              for n in client.get("/api/notifications", headers=owner).json()["notifications"]]
     assert kinds == [("info", "Autorisation"), ("info", "Action")]
     assert client.get("/api/approvals", headers=owner).json()["approvals"] == []
+
+
+# ─────────────────────────────────────────────
+# Étape 8 : notifications push, fichiers de la PWA
+# ─────────────────────────────────────────────
+
+from core.push import PushService, PushStore, VapidKeys  # noqa: E402
+from tests.test_push import browser_decrypt, browser_keys  # noqa: E402
+
+
+@pytest.fixture
+def with_push(ollama, tmp_path):
+    env = Environment("Linux", "6", "h", "u", "/bin/sh", tmp_path, tmp_path, {})
+    sessions = SessionManager(tmp_path / "data", env,
+                              lambda: Ollama(host=ollama.url, model="qwen2.5:7b"))
+    notifications = NotificationCenter(sessions)
+    sent = []
+    push = PushService(PushStore(tmp_path / "push.db"),
+                       VapidKeys.load_or_create(tmp_path / "vapid.pem"),
+                       "mailto:jarvis@example.com",
+                       post=lambda url, body, headers: sent.append((url, body)) or 201)
+    app = create_app(sessions, KEY, notifications, push=push)
+    return TestClient(app), push, notifications, sent
+
+
+def test_pwa_files(setup):
+    client, *_ = setup
+    sw = client.get("/sw.js")
+    assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
+    assert "showNotification" in sw.text
+    icon = client.get("/icons/icon-192.png")
+    assert icon.status_code == 200 and icon.content[:4] == b"\x89PNG"
+    assert client.get("/icons/inconnu.png").status_code == 404
+    assert client.get("/icons/..%2Fserver.py").status_code == 404
+    manifest = client.get("/manifest.webmanifest").json()
+    assert {i["sizes"] for i in manifest["icons"]} == {"192x192", "512x512"}
+
+
+def test_push_disabled_without_service(setup):
+    client, *_ = setup
+    assert client.get("/api/push/key", headers=AUTH).json() == {"publicKey": None}
+    _, p256dh, auth = browser_keys()
+    body = {"endpoint": "https://fcm.googleapis.com/x", "keys": {"p256dh": p256dh, "auth": auth}}
+    assert client.post("/api/push/subscribe", json=body, headers=AUTH).status_code == 503
+
+
+def test_push_subscribe_test_and_reminders(with_push):
+    client, push, notifications, sent = with_push
+    assert client.get("/api/push/key").status_code == 401
+    assert client.get("/api/push/key", headers=AUTH).json()["publicKey"] == push.keys.public_key
+
+    private, p256dh, auth = browser_keys()
+    body = {"endpoint": "https://web.push.apple.com/abc", "expirationTime": None,
+            "keys": {"p256dh": p256dh, "auth": auth}}
+    assert client.post("/api/push/subscribe", json=body, headers=AUTH).json() == {"ok": True}
+    bad = {**body, "endpoint": "https://192.168.1.10/vol"}
+    assert client.post("/api/push/subscribe", json=bad, headers=AUTH).status_code == 400
+
+    assert client.post("/api/push/test", headers=AUTH).json() == {"sent": 1}
+    assert json.loads(browser_decrypt(sent[-1][1], private, auth))["tag"] == "test"
+
+    # Un rappel échu part aussi en notification push (en arrière-plan)
+    notifications.push("owner", "Autorisation demandée (#3) : redemarrer_conteneur(nom='a')")
+    for _ in range(100):
+        if len(sent) >= 2:
+            break
+        time.sleep(0.02)
+    payload = json.loads(browser_decrypt(sent[-1][1], private, auth))
+    assert payload["title"] == "Jarvis demande une autorisation"
+
+    assert client.post("/api/push/unsubscribe", json={"endpoint": body["endpoint"]},
+                       headers=AUTH).json() == {"ok": True}
+    assert client.post("/api/push/test", headers=AUTH).json() == {"sent": 0}

@@ -98,6 +98,10 @@ try:
 except ValueError:
     CONFIRM_TIMEOUT = 120
 
+# Notifications push : contact transmis aux services de push des navigateurs
+# (Apple, Google, Mozilla) avec chaque envoi — un e-mail « mailto:… » ou une URL https
+PUSH_CONTACT: str = os.environ.get("JARVIS_PUSH_CONTACT", "mailto:jarvis@example.com")
+
 # Anthropic (LLM cloud, optionnel)
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 
