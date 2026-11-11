@@ -148,8 +148,7 @@ class Brain:
                 fact = _clean(match.group(1))
                 if not fact:
                     continue
-                key = f"fact_{self.long_term.count() + 1}"
-                self.long_term.save(key, fact)
+                self.long_term.save(self._next_fact_key(), fact)
                 return f"Noté ! Je me souviendrai que {fact}."
 
         # "que sais-tu de moi ?"
@@ -167,6 +166,20 @@ class Brain:
                 return self._forget_fact(target)
 
         return None
+
+    def _next_fact_key(self) -> str:
+        """
+        Génère une clé libre pour un nouveau fait.
+
+        On prend le plus grand numéro existant + 1 (et non le nombre
+        de faits + 1) : après une suppression, le compte baisse et
+        on écraserait un fait existant.
+        """
+        numbers = [
+            int(key[5:]) for key in self.long_term.get_all()
+            if key.startswith("fact_") and key[5:].isdigit()
+        ]
+        return f"fact_{max(numbers, default=0) + 1}"
 
     def _build_long_term_context(self) -> str:
         """

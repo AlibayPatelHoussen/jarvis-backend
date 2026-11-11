@@ -163,3 +163,23 @@ def test_forget_strips_trailing_punctuation(brain):
     brain.long_term.save("k1", "j'aime le café")
     brain.process("oublie café !")
     assert brain.long_term.count() == 0
+
+
+# ─────────────────────────────────────────────
+# Non-régression : clés des faits
+# ─────────────────────────────────────────────
+
+def test_remember_after_delete_does_not_overwrite(brain):
+    brain.process("souviens-toi que a")
+    brain.process("souviens-toi que b")
+    brain.process("oublie a")
+    brain.process("souviens-toi que c")
+    assert sorted(brain.long_term.get_all().values()) == ["b", "c"]
+
+
+def test_remember_ignores_non_numeric_keys(brain):
+    brain.long_term.save("prenom", "Houssen")
+    brain.long_term.save("fact_7", "x")
+    brain.process("souviens-toi que y")
+    assert brain.long_term.get("fact_8") == "y"
+    assert brain.long_term.count() == 3
