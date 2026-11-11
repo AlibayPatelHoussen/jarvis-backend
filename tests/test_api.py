@@ -19,6 +19,7 @@ from core.sessions import NotificationCenter, SessionManager
 from llm.ollama import Ollama
 from tests.fake_ollama import FakeOllama
 from tools.tasks import TaskStore
+from core.memory import LongTermMemory
 
 KEY = "cle-de-test-tres-secrete"
 AUTH = {"Authorization": f"Bearer {KEY}"}
@@ -500,3 +501,16 @@ def test_push_subscribe_test_and_reminders(with_push):
     assert client.post("/api/push/unsubscribe", json={"endpoint": body["endpoint"]},
                        headers=AUTH).json() == {"ok": True}
     assert client.post("/api/push/test", headers=AUTH).json() == {"sent": 0}
+
+
+def test_owner_shares_the_terminal_database(setup):
+    """Le propriétaire (API) et le terminal utilisent la même mémoire."""
+    from config import settings
+    client, sessions, _ = setup
+    assert sessions.user_db("owner") == sessions.data_dir / "memory.db"
+    client.post("/api/chat", json={"message": "souviens-toi que je joue de la guitare"},
+                headers=AUTH)
+    terminal_memory = LongTermMemory(db_path=sessions.data_dir / "memory.db")
+    assert "je joue de la guitare" in terminal_memory.get_all().values()
+    assert settings.MEMORY_DB.name == "memory.db"
+    assert "owner" in sessions.known_users()

@@ -60,7 +60,10 @@ parler **au nom de ses utilisateurs** — sinon `403` :
 | `X-Jarvis-Role` | `user` | `admin` ou `user` (défaut : `user`) |
 
 Chaque utilisateur a sa propre conversation, mémoire, tâches, rappels et notes
-(`<JARVIS_DATA_DIR>/users/<id>/memory.db`).
+(`<JARVIS_DATA_DIR>/users/<id>/memory.db`). Le propriétaire (`owner`) utilise la
+même base que le terminal (`<JARVIS_DATA_DIR>/memory.db`) : un seul Jarvis,
+partout. Une interface peut relier un de ses comptes au propriétaire en envoyant
+`X-Jarvis-User: owner` (ex. Nexus avec `JARVIS_OWNER`).
 
 | Rôle | Outils |
 |---|---|

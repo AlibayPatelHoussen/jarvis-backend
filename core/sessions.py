@@ -52,6 +52,11 @@ class SessionManager:
     def user_db(self, user_id: str) -> Path:
         if not USER_ID.fullmatch(user_id or ""):
             raise SessionError(f"identifiant d'utilisateur invalide : {user_id!r}")
+        if user_id == "owner":
+            # Le propriétaire partage la base du terminal (python start.py) :
+            # même mémoire, mêmes tâches, partout.
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            return self.data_dir / "memory.db"
         folder = self.data_dir / "users" / user_id
         folder.mkdir(parents=True, exist_ok=True)
         return folder / "memory.db"
@@ -85,11 +90,13 @@ class SessionManager:
 
     def known_users(self) -> list[str]:
         """Utilisateurs ayant des données (même s'ils ne sont pas connectés)."""
+        users = ["owner"] if (self.data_dir / "memory.db").exists() else []
         users_dir = self.data_dir / "users"
-        if not users_dir.is_dir():
-            return []
-        return sorted(p.name for p in users_dir.iterdir()
-                      if (p / "memory.db").exists() and USER_ID.fullmatch(p.name))
+        if users_dir.is_dir():
+            users += [p.name for p in users_dir.iterdir()
+                      if (p / "memory.db").exists() and USER_ID.fullmatch(p.name)
+                      and p.name != "owner"]
+        return sorted(users)
 
 
 @dataclass
