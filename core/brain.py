@@ -180,6 +180,7 @@ class Brain:
         self,
         message: str,
         on_token: Optional[Callable[[str], None]] = None,
+        history: Optional[list[dict]] = None,
     ) -> str:
         """
         Traite un message et retourne une réponse.
@@ -193,6 +194,9 @@ class Brain:
                        par morceau vers cette fonction (affichage en direct).
                        Les réponses des commandes directes ne passent pas
                        par on_token : elles sont seulement retournées.
+            history  : Historique fourni par l'application appelante
+                       (ex. API compatible OpenAI). Il remplace la
+                       conversation en cours, qui n'est alors pas modifiée.
         """
         message = message.strip()
         if not message:
@@ -212,7 +216,7 @@ class Brain:
             ),
         )
         messages = [{"role": "system", "content": system}]
-        messages += self.short_term.get_history()
+        messages += self.short_term.get_history() if history is None else list(history)
         messages.append({"role": "user", "content": message})
 
         try:
@@ -220,8 +224,9 @@ class Brain:
         except OllamaError as e:
             return f"Je ne peux pas répondre en ce moment : {e}"
 
-        self.short_term.add("user", message)
-        self.short_term.add("assistant", response)
+        if history is None:
+            self.short_term.add("user", message)
+            self.short_term.add("assistant", response)
         return response
 
     def _run_agent(
