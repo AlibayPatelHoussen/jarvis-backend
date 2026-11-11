@@ -16,3 +16,9 @@ SpeechRecognition>=3.10.0
 
 # Système (état de la machine, processus)
 psutil>=5.9
+
+# Serveur (python start.py --server)
+fastapi>=0.110
+uvicorn>=0.29
+# Tests de l'API
+httpx>=0.27

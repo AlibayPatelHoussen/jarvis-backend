@@ -6,7 +6,7 @@ Assistant IA personnel — Backend Python
 - Python 3.11
 - Ollama (LLM local)
 - SQLite (mémoire)
-- FastAPI (API REST - phase 8)
+- FastAPI (mode serveur)
 
 ## Installation
 
@@ -19,6 +19,18 @@ pip install -r requirements.txt
 cp .env.example .env
 python start.py
 ```
+
+## Jarvis sur ton serveur (utilisable partout)
+
+```bash
+sudo git clone https://github.com/AlibayPatelHoussen/jarvis-backend.git /opt/jarvis
+cd /opt/jarvis && sudo bash scripts/install-server.sh
+```
+
+Installe Ollama, le modèle et le service `jarvis`, puis affiche ta clé d'accès.
+Expose-le avec Cloudflare Tunnel et ouvre la page de chat depuis ton téléphone.
+Tout est expliqué dans [docs/SERVEUR.md](docs/SERVEUR.md) ; l'API est décrite
+dans [docs/API.md](docs/API.md).
 
 ## Parler avec Jarvis dans le terminal
 
@@ -72,7 +84,7 @@ core/       → Cerveau (logique centrale)
 llm/        → Connexion aux modèles IA
 tools/      → Fonctionnalités (météo, email...)
 interface/  → CLI et voix
-api/        → API REST (phase 8)
+api/        → Serveur : API HTTP + page de chat web
 config/     → Configuration
 tests/      → Tests unitaires
 
