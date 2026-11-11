@@ -105,3 +105,83 @@ def test_listen_returns_none_if_unavailable():
     if not stt.is_available:
         result = stt.listen(timeout=1)
         assert result is None
+
+
+# ─────────────────────────────────────────────
+# Non-régression : un seul thread parleur
+# ─────────────────────────────────────────────
+
+class FakeEngine:
+    """Moteur pyttsx3 factice qui note le thread de chaque appel."""
+
+    def __init__(self):
+        import threading
+        self.created_in = threading.get_ident()
+        self.threads = set()
+        self.spoken = []
+        self.props = {}
+
+    def getProperty(self, name):
+        return []
+
+    def setProperty(self, name, value):
+        import threading
+        self.threads.add(threading.get_ident())
+        self.props[name] = value
+
+    def say(self, text):
+        import threading
+        self.threads.add(threading.get_ident())
+        self.spoken.append(text)
+
+    def runAndWait(self):
+        pass
+
+
+@pytest.fixture
+def fake_tts():
+    created = []
+
+    def factory():
+        # Créé dans le thread parleur, comme pyttsx3.init()
+        created.append(FakeEngine())
+        return created[0]
+
+    voice = VoiceOutput(engine_factory=factory)
+    yield voice, created[0]
+    voice.shutdown()
+
+
+def test_speak_async_keeps_order(fake_tts):
+    voice, engine = fake_tts
+    for i in range(20):
+        voice.speak_async(f"phrase {i}")
+    voice.speak("fin")
+    assert engine.spoken == [f"phrase {i}" for i in range(20)] + ["fin"]
+
+
+def test_engine_used_only_in_its_own_thread(fake_tts):
+    voice, engine = fake_tts
+    voice.speak_async("bonjour")
+    voice.set_rate(500)
+    voice.speak("au revoir")
+    assert engine.threads == {engine.created_in}
+    assert engine.props["rate"] == 300
+
+
+def test_shutdown_finishes_pending_speech():
+    engine = FakeEngine()
+    voice = VoiceOutput(engine_factory=lambda: engine)
+    voice.speak_async("dernière phrase")
+    voice.shutdown()
+    assert engine.spoken == ["dernière phrase"]
+
+
+def test_unavailable_engine_does_nothing():
+    def broken():
+        raise RuntimeError("pas de moteur")
+    voice = VoiceOutput(engine_factory=broken)
+    assert voice.is_available is False
+    assert voice.speak_async("test") is False
+    voice.speak("test")
+    voice.shutdown()
