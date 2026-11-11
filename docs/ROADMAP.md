@@ -70,12 +70,11 @@ cet environnement (plugins, MCP, API HTTP).
 
 | Amélioration | Détail |
 |---|---|
-| Mode serveur | `python start.py --server` : API HTTP (FastAPI) + page de chat web, en local sur le serveur. |
-| Page web | Conversation en direct, outils affichés, boutons Autoriser / Refuser, rappels, installable sur l'écran d'accueil du téléphone. |
-| Sécurité | Clé d'accès obligatoire, écoute en local seulement, exposition par Cloudflare Tunnel (HTTPS). |
+| Mode serveur | `python start.py --server` : API HTTP (FastAPI), **sans interface**, en local sur le serveur. Les interfaces (Nexus, app web dédiée…) sont des projets séparés. |
+| Sécurité | Clé d'accès obligatoire, écoute en local par défaut, CORS seulement pour les interfaces autorisées. |
 | Multi-utilisateur | Une conversation, une mémoire et des tâches par utilisateur ; outils selon le rôle (`admin` / `user`), comme Nexus. |
 | Installation | `scripts/install-server.sh` (Ollama, modèle, utilisateur système, service systemd) et `scripts/update-server.sh`. Voir [SERVEUR.md](SERVEUR.md). |
-| API documentée | [API.md](API.md) : ce dont Nexus aura besoin pour intégrer Jarvis. |
+| API documentée | [API.md](API.md) : tout ce qu'une interface doit savoir. |
 
 ## Étape 7 — Se brancher partout ✅
 
@@ -83,22 +82,20 @@ cet environnement (plugins, MCP, API HTTP).
 |---|---|
 | Clés par application | `python start.py cles ajouter|liste|supprimer` : une clé révocable par application, avec rôle maximal, utilisateur et option « confiance » (parler au nom de ses utilisateurs, ex. Nexus). |
 | API au format standard (OpenAI) | `/v1/models`, `/v1/chat/completions` (streaming ou non) : tout logiciel qui accepte une adresse « OpenAI » personnalisée parle à Jarvis, sans code. Aucun compte OpenAI : c'est seulement le format des messages, tout reste sur ton serveur. |
-| Autorisations à distance | Une action sensible demandée depuis une application sans bouton de confirmation est mise en attente ; tu l'autorises depuis la page web, le résultat arrive en notification. |
+| Autorisations à distance | Une action sensible demandée depuis une application sans bouton de confirmation est mise en attente ; tu l'autorises depuis ton interface (`/api/approvals`), le résultat arrive en notification. |
 
-## Étape 8 — Voix et notifications push ✅
+## Étape 8 — Notifications push ✅
 
 | Amélioration | Détail |
 |---|---|
-| Parler à Jarvis | Bouton micro : reconnaissance vocale du navigateur, envoi automatique, réponse lue à voix haute. |
-| L'entendre | Synthèse vocale de l'appareil ; bouton pour lire aussi les réponses écrites. |
-| Notifications push | Rappels et demandes d'autorisation sur le téléphone, même page fermée (Web Push standard, chiffré, sans compte ; sur iPhone depuis l'écran d'accueil). |
-| App sur l'écran d'accueil | Icônes PNG, manifeste et service worker : Jarvis s'installe comme une application. |
+| Notifications push | Rappels et demandes d'autorisation envoyés aux appareils abonnés (Web Push standard, chiffré, sans compte). L'interface fournit le service worker et s'abonne via `/api/push/*`. |
+| Voix | Côté interface, avec les API du navigateur (reconnaissance et synthèse vocale) : décrit dans [API.md](API.md). |
 
-## Étape 9 — Intégration dans Nexus (plus tard, par toi)
+## Étape 9 — Page Jarvis dans Nexus
 
-Le backend Nexus relaiera ses utilisateurs vers l'API de Jarvis avec une clé
-`--confiance` (voir la fin d'[API.md](API.md)) ; Nexus pourra aussi exposer ses
-propres actions (lancer un film, scanner la bibliothèque…) comme outils de Jarvis.
+Dans le dépôt Nexus : page « Jarvis » (section Serveur, au-dessus de Fichiers ;
+onglet Aperçu sur iPhone). Le backend Nexus relaie ses utilisateurs vers l'API
+Jarvis avec une clé `--confiance` ; la clé ne quitte jamais le serveur.
 
 ## Étape 10 — Finitions
 

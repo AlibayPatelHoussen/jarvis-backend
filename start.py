@@ -4,7 +4,7 @@ start.py
 Point d'entrée unique de Jarvis.
 
     python start.py                       → conversation dans le terminal
-    python start.py --server              → serveur (API + page web)
+    python start.py --server              → serveur (API, sans interface)
     python start.py cles liste            → applications autorisées
     python start.py cles ajouter NOM      → nouvelle clé d'application
     python start.py cles supprimer NOM    → retirer une application
@@ -60,7 +60,7 @@ def manage_keys(args) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Jarvis — assistant IA personnel")
     parser.add_argument("--server", action="store_true",
-                        help="lancer le serveur (API + page de chat web)")
+                        help="lancer le serveur (API HTTP, sans interface)")
     parser.add_argument("--host", help="adresse d'écoute (défaut : JARVIS_HOST)")
     parser.add_argument("--port", type=int, help="port (défaut : JARVIS_PORT)")
     sub = parser.add_subparsers(dest="commande")

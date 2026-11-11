@@ -19,6 +19,7 @@ from core.sessions import NotificationCenter, SessionManager
 from llm.ollama import Ollama
 from tests.fake_ollama import FakeOllama
 from tools.tasks import TaskStore
+from core.memory import LongTermMemory
 
 KEY = "cle-de-test-tres-secrete"
 AUTH = {"Authorization": f"Bearer {KEY}"}
@@ -60,14 +61,20 @@ def test_requires_api_key(tmp_path):
         create_app(SessionManager(tmp_path, None, Ollama), "")
 
 
-def test_health_and_index_are_public(setup):
+def test_health_and_root_are_public(setup):
     client, *_ = setup
     health = client.get("/health").json()
     assert health["status"] == "ok" and health["llm_ready"] is True
     assert health["model"] == "qwen2.5:7b"
-    page = client.get("/")
-    assert page.status_code == 200 and "Jarvis" in page.text
-    assert client.get("/manifest.webmanifest").json()["name"] == "Jarvis"
+    root = client.get("/").json()
+    assert root["name"] == "Jarvis" and "aucune interface" in root["description"]
+
+
+@pytest.mark.parametrize("path", ["/index.html", "/manifest.webmanifest", "/sw.js",
+                                  "/icons/icon-192.png"])
+def test_no_user_interface_is_served(setup, path):
+    client, *_ = setup
+    assert client.get(path).status_code == 404
 
 
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer mauvaise"},
@@ -438,17 +445,25 @@ def with_push(ollama, tmp_path):
     return TestClient(app), push, notifications, sent
 
 
-def test_pwa_files(setup):
-    client, *_ = setup
-    sw = client.get("/sw.js")
-    assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
-    assert "showNotification" in sw.text
-    icon = client.get("/icons/icon-192.png")
-    assert icon.status_code == 200 and icon.content[:4] == b"\x89PNG"
-    assert client.get("/icons/inconnu.png").status_code == 404
-    assert client.get("/icons/..%2Fserver.py").status_code == 404
-    manifest = client.get("/manifest.webmanifest").json()
-    assert {i["sizes"] for i in manifest["icons"]} == {"192x192", "512x512"}
+def test_cors_for_web_interfaces(ollama, tmp_path):
+    env = Environment("Linux", "6", "h", "u", "/bin/sh", tmp_path, tmp_path, {})
+    sessions = SessionManager(tmp_path, env, lambda: Ollama(host=ollama.url))
+    app = create_app(sessions, KEY, cors_origins=["https://jarvis-app.exemple.com"])
+    client = TestClient(app)
+    preflight = client.options("/api/chat", headers={
+        "Origin": "https://jarvis-app.exemple.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type"})
+    assert preflight.headers["access-control-allow-origin"] == "https://jarvis-app.exemple.com"
+    other = client.get("/health", headers={"Origin": "https://pirate.exemple.com"})
+    assert "access-control-allow-origin" not in other.headers
+    # Sans configuration, aucune origine n'est autorisée
+    plain = TestClient(create_app(sessions, KEY))
+    assert "access-control-allow-origin" not in plain.get(
+        "/health", headers={"Origin": "https://jarvis-app.exemple.com"}).headers
+    # La clé reste obligatoire
+    assert client.get("/api/me", headers={"Origin": "https://jarvis-app.exemple.com"}
+                      ).status_code == 401
 
 
 def test_push_disabled_without_service(setup):
@@ -486,3 +501,16 @@ def test_push_subscribe_test_and_reminders(with_push):
     assert client.post("/api/push/unsubscribe", json={"endpoint": body["endpoint"]},
                        headers=AUTH).json() == {"ok": True}
     assert client.post("/api/push/test", headers=AUTH).json() == {"sent": 0}
+
+
+def test_owner_shares_the_terminal_database(setup):
+    """Le propriétaire (API) et le terminal utilisent la même mémoire."""
+    from config import settings
+    client, sessions, _ = setup
+    assert sessions.user_db("owner") == sessions.data_dir / "memory.db"
+    client.post("/api/chat", json={"message": "souviens-toi que je joue de la guitare"},
+                headers=AUTH)
+    terminal_memory = LongTermMemory(db_path=sessions.data_dir / "memory.db")
+    assert "je joue de la guitare" in terminal_memory.get_all().values()
+    assert settings.MEMORY_DB.name == "memory.db"
+    assert "owner" in sessions.known_users()

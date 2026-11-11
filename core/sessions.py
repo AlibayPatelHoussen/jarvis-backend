@@ -5,9 +5,9 @@ Un Jarvis par utilisateur, pour le mode serveur.
 
 Chaque utilisateur a sa propre conversation, sa mémoire, ses tâches,
 rappels et notes (data/users/<id>/memory.db), et des outils selon son
-rôle ("admin" ou "user"). Aujourd'hui la page web utilise un seul
-utilisateur, "owner" (admin) ; une application hôte comme Nexus pourra
-plus tard transmettre l'identité de chacun de ses utilisateurs.
+rôle ("admin" ou "user"). La clé principale parle au nom du
+propriétaire ("owner", admin) ; une application de confiance comme
+Nexus transmet l'identité de chacun de ses utilisateurs.
 """
 
 import re
@@ -52,6 +52,11 @@ class SessionManager:
     def user_db(self, user_id: str) -> Path:
         if not USER_ID.fullmatch(user_id or ""):
             raise SessionError(f"identifiant d'utilisateur invalide : {user_id!r}")
+        if user_id == "owner":
+            # Le propriétaire partage la base du terminal (python start.py) :
+            # même mémoire, mêmes tâches, partout.
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            return self.data_dir / "memory.db"
         folder = self.data_dir / "users" / user_id
         folder.mkdir(parents=True, exist_ok=True)
         return folder / "memory.db"
@@ -85,11 +90,13 @@ class SessionManager:
 
     def known_users(self) -> list[str]:
         """Utilisateurs ayant des données (même s'ils ne sont pas connectés)."""
+        users = ["owner"] if (self.data_dir / "memory.db").exists() else []
         users_dir = self.data_dir / "users"
-        if not users_dir.is_dir():
-            return []
-        return sorted(p.name for p in users_dir.iterdir()
-                      if (p / "memory.db").exists() and USER_ID.fullmatch(p.name))
+        if users_dir.is_dir():
+            users += [p.name for p in users_dir.iterdir()
+                      if (p / "memory.db").exists() and USER_ID.fullmatch(p.name)
+                      and p.name != "owner"]
+        return sorted(users)
 
 
 @dataclass
@@ -105,8 +112,8 @@ class Notification:
 class NotificationCenter:
     """
     Livre les rappels en mode serveur : vérifie les bases de tous les
-    utilisateurs et met les rappels échus en attente. La page web
-    (ou Nexus) les récupère avec GET /api/notifications.
+    utilisateurs et met les rappels échus en attente. Les interfaces
+    (Nexus…) les récupèrent avec GET /api/notifications.
     """
 
     def __init__(self, sessions: SessionManager, interval: float = 15.0,

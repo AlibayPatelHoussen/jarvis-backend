@@ -27,10 +27,9 @@ sudo git clone https://github.com/AlibayPatelHoussen/jarvis-backend.git /opt/jar
 cd /opt/jarvis && sudo bash scripts/install-server.sh
 ```
 
-Installe Ollama, le modèle et le service `jarvis`, puis affiche ta clé d'accès.
-Expose-le avec Cloudflare Tunnel et ouvre la page de chat depuis ton téléphone :
-tu peux lui **parler** (micro) et l'entendre répondre, et recevoir rappels et
-demandes d'autorisation en **notification**, même page fermée.
+Installe Ollama, le modèle et le service `jarvis` (une **API, sans interface**),
+puis affiche ta clé d'accès. Les interfaces — la page Jarvis de Nexus, une app web
+dédiée, d'autres logiciels — se branchent dessus avec leur propre clé.
 Tout est expliqué dans [docs/SERVEUR.md](docs/SERVEUR.md) ; l'API est décrite
 dans [docs/API.md](docs/API.md).
 
@@ -86,7 +85,7 @@ core/       → Cerveau (logique centrale)
 llm/        → Connexion aux modèles IA
 tools/      → Fonctionnalités (météo, email...)
 interface/  → CLI et voix
-api/        → Serveur : API HTTP + page de chat web
+api/        → Serveur : API HTTP (sans interface)
 config/     → Configuration
 tests/      → Tests unitaires
 

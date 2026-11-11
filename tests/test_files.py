@@ -109,3 +109,29 @@ def test_ecrire_fichier(tools, ws):
     assert (ws.root / "Nouveau" / "a.txt").read_text() == "Bonjour !"
     assert "accès refusé" in tools.execute(
         "ecrire_fichier", {"chemin": "../pirate.txt", "contenu": "x"}, confirm=ok)
+
+
+# ─────────────────────────────────────────────
+# Dossier de travail « / » (accès complet)
+# ─────────────────────────────────────────────
+
+def test_root_workspace_accepts_any_path(tmp_path):
+    ws = Workspace("/")
+    assert ws.resolve(str(tmp_path)) == tmp_path.resolve()
+    assert ws.resolve("etc") == Workspace("/").root / "etc"
+
+
+def test_walk_skips_virtual_filesystems():
+    ws = Workspace("/")
+    seen = set()
+    for path in ws.walk(Workspace("/").root, seconds=0.5):
+        seen.add(str(path).split("/")[1])
+    assert not seen & {"proc", "sys", "dev", "run"}
+
+
+def test_search_stops_after_time_limit(tools, ws, monkeypatch):
+    import tools.files as files
+    monkeypatch.setattr(files, "SEARCH_SECONDS", 0)
+    monkeypatch.setattr(files.Workspace.walk, "__defaults__", (0,))
+    out = tools.execute("chercher_fichiers", {"motif": "*.iso"})
+    assert "arrêtée au bout de 20 s" in out

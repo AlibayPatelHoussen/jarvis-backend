@@ -85,7 +85,7 @@ except ValueError:
     COMMAND_TIMEOUT = 30
 
 # Mode serveur (python start.py --server)
-# Clé d'accès obligatoire pour l'API et la page web
+# Clé d'accès principale, obligatoire pour l'API
 API_KEY: str = os.environ.get("JARVIS_API_KEY", "")
 # 127.0.0.1 = accessible seulement depuis la machine (via un tunnel HTTPS)
 SERVER_HOST: str = os.environ.get("JARVIS_HOST", "127.0.0.1")
@@ -97,6 +97,11 @@ try:
     CONFIRM_TIMEOUT: int = int(os.environ.get("JARVIS_CONFIRM_TIMEOUT", "120"))
 except ValueError:
     CONFIRM_TIMEOUT = 120
+
+# Interfaces web autorisées à appeler l'API depuis le navigateur (CORS),
+# séparées par des virgules, ex. https://jarvis-app.mondomaine.com
+CORS_ORIGINS: list = [o.strip() for o in os.environ.get("JARVIS_CORS_ORIGINS", "").split(",")
+                      if o.strip()]
 
 # Notifications push : contact transmis aux services de push des navigateurs
 # (Apple, Google, Mozilla) avec chaque envoi — un e-mail « mailto:… » ou une URL https
