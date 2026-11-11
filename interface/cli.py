@@ -9,6 +9,7 @@ envoyer au Brain, afficher la réponse.
 
 from core.brain import Brain
 from config import settings
+from interface.voice import VoiceOutput
 
 
 QUIT_COMMANDS = {"quit", "exit", "q", "au revoir", "bye"}
@@ -53,12 +54,24 @@ def print_help() -> None:
     print("  aide                     → afficher cette aide")
     print("  quit / exit              → quitter Jarvis")
     print_separator()
+    print("  CALCUL")
+    print("  calcule [expression]     → ex: calcule 15 * 7")
+    print("  combien fait [expr]      → ex: combien fait 2 ** 10")
+    print("  MÉTÉO")
+    print("  météo                    → météo à votre position")
+    print("  météo à [ville]          → météo d'une ville")
+    print("  ACTUALITÉS")
+    print("  actualités               → titres du moment")
+    print("  actualités tech          → actualités tech")
+    print("  actualités sport         → actualités sport")
     print()
 
 
 def run() -> None:
     """Lance la boucle principale de la CLI."""
     brain = Brain()
+    # Initialiser la voix (optionnel — fonctionne sans)
+    tts = VoiceOutput()
 
     if not brain.is_ready():
         print()
@@ -99,4 +112,7 @@ def run() -> None:
         print()
         response = brain.process(user_input)
         print(f"Jarvis >>> {response}")
+        # Dire la réponse à voix haute si disponible
+        if tts.is_available:
+            tts.speak_async(response)
         print()
