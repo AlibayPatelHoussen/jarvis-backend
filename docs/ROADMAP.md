@@ -46,14 +46,17 @@ cet environnement (plugins, MCP, API HTTP).
 | Notes | Prendre une note, chercher dans ses notes. |
 | Minuteur | Cas particulier du rappel. |
 
-## Étape 4 — Comprendre son environnement local
+## Étape 4 — Comprendre son environnement local ✅
 
 | Amélioration | Détail |
 |---|---|
-| Découverte au démarrage | Système d'exploitation, dossier de travail, outils disponibles : résumé injecté dans le prompt. |
-| Fichiers | Lister un dossier, lire, chercher, écrire (avec confirmation) — limités à un dossier de travail autorisé. |
-| Commandes | Exécuter une commande du terminal avec confirmation et délai maximal. |
-| Web | Lire une page web et la résumer ; recherche web sans clé API. |
+| Découverte au démarrage | Système, machine, shell, dossier de travail, logiciels présents (docker, systemctl, git, ffmpeg…) : résumé injecté dans le prompt (`/environnement`). Seuls les outils utilisables sur la machine sont proposés. |
+| État du serveur | `infos_systeme` (CPU, mémoire, disques, charge, durée d'allumage), `espace_disque`, `processus`. |
+| Docker / services | `conteneurs_docker`, `journaux_conteneur`, `redemarrer_conteneur` (confirmation), `etat_service` (systemd). |
+| Fichiers | Lister, lire, chercher par nom ou par contenu, écrire (confirmation) — limités à `JARVIS_WORKSPACE`. |
+| Commandes | `executer_commande` avec confirmation et délai maximal. |
+| Web | `lire_page_web` (aussi en réseau local) et `recherche_web` (DuckDuckGo, sans clé). |
+| Sécurité | Le contenu des fichiers, pages et sorties est traité comme une donnée, jamais comme un ordre. |
 
 ## Étape 5 — S'adapter à n'importe quel environnement
 
@@ -63,13 +66,17 @@ cet environnement (plugins, MCP, API HTTP).
 | Client MCP | Jarvis se connecte aux serveurs MCP (standard ouvert) listés dans `config/mcp.json` et récupère seul leurs outils. |
 | Import OpenAPI | À partir de la description OpenAPI d'une application, Jarvis génère les outils correspondants. |
 
-## Étape 6 — Intégration (Nexus ou autre)
+## Étape 6 — Intégration dans Nexus
+
+Nexus est une application web (panneau de contrôle de serveur auto-hébergé
+et centre multimédia). Jarvis tourne à côté, comme un service.
 
 | Amélioration | Détail |
 |---|---|
-| API HTTP | `POST /chat` (avec streaming), `GET /tools`, sessions séparées, clé d'API. |
-| Outils fournis par l'hôte | L'application hôte enregistre ses propres actions via l'API (`POST /tools`) : Jarvis peut alors les utiliser. |
-| Serveur MCP | Jarvis lui-même exposé en MCP pour les hôtes compatibles. |
+| API HTTP | `POST /chat` (réponse en streaming), `GET /tools`, `GET /health`, une session de conversation par utilisateur Nexus, clé d'API partagée. |
+| Outils fournis par Nexus | Nexus déclare ses propres actions (lancer un film, redémarrer une app, ajouter un média…) via `POST /tools` avec l'URL à appeler : Jarvis les utilise comme ses outils intégrés. |
+| Confirmations dans l'interface | Les actions sensibles renvoient une demande de confirmation que Nexus affiche (bouton Autoriser / Refuser). |
+| Widget de chat | Exemple de composant web à intégrer dans Nexus. |
 
 ## Étape 7 — Finitions
 

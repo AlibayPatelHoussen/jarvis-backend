@@ -34,6 +34,12 @@ Jarvis choisit seul ses outils (calcul, date, météo, actualités, mémoire) :
 de calcul. `/outils` liste ce qu'il sait faire. Il faut pour cela un modèle
 compatible avec les outils (qwen2.5, llama3.1, mistral v0.3).
 
+Jarvis **découvre la machine** où il tourne (`/environnement`) et peut
+surveiller le serveur : « comment va le serveur ? », « quels conteneurs
+tournent ? », « montre les logs de jellyfin », « cherche les .mkv dans Films »,
+« lis cette page : https://… ». Les fichiers sont limités à `JARVIS_WORKSPACE`,
+et toute commande, écriture ou redémarrage demande ton accord (o/n).
+
 Au quotidien, Jarvis gère aussi **tâches, rappels et notes** :
 
 - « Ajoute payer le loyer à mes tâches pour vendredi 18h, c'est urgent »

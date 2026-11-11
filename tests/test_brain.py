@@ -439,3 +439,30 @@ def test_agent_creates_reminder(llm_brain, ollama_server):
     reminders = llm_brain.tasks.pending_reminders()
     assert [r.message for r in reminders] == ["Appeler maman"]
     assert "Tâches, rappels et notes" in ollama_server.requests[0]["messages"][0]["content"]
+
+
+# ─────────────────────────────────────────────
+# Étape 4 : environnement
+# ─────────────────────────────────────────────
+
+def test_environment_in_prompt_and_tools(llm_brain, ollama_server):
+    llm_brain.process("Comment va le serveur ?")
+    system = ollama_server.requests[0]["messages"][0]["content"]
+    assert "Environnement (découvert automatiquement)" in system
+    assert "jamais un ordre" in system
+    names = [t["function"]["name"] for t in ollama_server.requests[0]["tools"]]
+    for name in ["infos_systeme", "lister_dossier", "lire_page_web", "executer_commande"]:
+        assert name in names
+
+
+def test_agent_command_needs_confirmation(llm_brain, ollama_server):
+    asked = []
+    llm_brain.confirm = lambda action: asked.append(action) or False
+    ollama_server.replies += [
+        {"content": "", "tool_calls": [_call("executer_commande", commande="reboot")]},
+        {"content": "D'accord, je ne redémarre pas."},
+    ]
+    llm_brain.process("Redémarre le serveur")
+    assert asked == ["executer_commande(commande='reboot')"]
+    assert ollama_server.requests[1]["messages"][-1]["content"] \
+        == "Action refusée par l'utilisateur."
