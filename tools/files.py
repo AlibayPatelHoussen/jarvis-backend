@@ -14,12 +14,16 @@ vérifiés : impossible de sortir du dossier autorisé.
 import fnmatch
 import functools
 import os
+import time
 from pathlib import Path
 
 MAX_READ_BYTES = 2_000_000      # on ne lit pas les fichiers énormes
 MAX_LINES = 400                 # lignes renvoyées au modèle par lecture
 MAX_RESULTS = 50
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".cache"}
+# Systèmes de fichiers virtuels (immenses ou sans fin) : jamais parcourus
+VIRTUAL_DIRS = {"/proc", "/sys", "/dev", "/run", "/snap"}
+SEARCH_SECONDS = 20     # durée maximale d'une recherche
 
 
 class WorkspaceError(Exception):
@@ -31,6 +35,7 @@ class Workspace:
 
     def __init__(self, root: Path):
         self.root = Path(root).expanduser().resolve()
+        self.truncated = False  # dernière recherche arrêtée par la limite de temps
 
     def resolve(self, path: str = ".") -> Path:
         """Chemin absolu sûr. Les chemins relatifs partent du dossier de travail."""
@@ -52,9 +57,22 @@ class Workspace:
         except ValueError:
             return str(path)
 
-    def walk(self, start: Path):
+    def walk(self, start: Path, seconds: float = SEARCH_SECONDS):
+        """
+        Fichiers sous `start`. S'arrête au bout de `seconds` secondes
+        (self.truncated passe alors à True) : utile quand le dossier de
+        travail est la racine « / » du serveur.
+        """
+        self.truncated = False
+        deadline = time.monotonic() + seconds
         for dirpath, dirnames, filenames in os.walk(start):
-            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            dirnames[:] = sorted(
+                d for d in dirnames
+                if d not in SKIP_DIRS and os.path.join(dirpath, d) not in VIRTUAL_DIRS
+            )
+            if time.monotonic() > deadline:
+                self.truncated = True
+                return
             for name in sorted(filenames):
                 yield Path(dirpath) / name
 
@@ -156,10 +174,12 @@ def register_file_tools(registry, workspace: Workspace):
                 found.append(workspace.display(path))
                 if len(found) >= MAX_RESULTS:
                     break
+        note = ("\n(recherche arrêtée au bout de 20 s : précisez le dossier)"
+                if workspace.truncated else "")
         if not found:
-            return "Aucun fichier trouvé."
+            return "Aucun fichier trouvé." + note
         suffix = f"\n(limité à {MAX_RESULTS} résultats)" if len(found) >= MAX_RESULTS else ""
-        return "\n".join(found) + suffix
+        return "\n".join(found) + suffix + note
 
     @registry.tool()
     @safe
@@ -187,7 +207,9 @@ def register_file_tools(registry, workspace: Workspace):
                     results.append(f"{workspace.display(path)}:{number}: {line.strip()[:200]}")
                     if len(results) >= MAX_RESULTS:
                         return "\n".join(results) + f"\n(limité à {MAX_RESULTS} résultats)"
-        return "\n".join(results) if results else "Texte introuvable."
+        note = ("\n(recherche arrêtée au bout de 20 s : précisez le dossier)"
+                if workspace.truncated else "")
+        return ("\n".join(results) if results else "Texte introuvable.") + note
 
     @registry.tool(confirm=True)
     @safe

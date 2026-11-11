@@ -45,6 +45,21 @@ Options (avant `sudo bash …`, ex. `sudo MODEL=qwen2.5:3b bash scripts/install-
 | `PORT` | `8765` | Port local |
 | `DOCKER_ACCESS` | `yes` | Laisse Jarvis lister les conteneurs, lire leurs logs, les redémarrer (avec ton accord) |
 | `JARVIS_USER_NAME` | ton login | Prénom utilisé par Jarvis |
+| `FULL_ACCESS` | `no` | `yes` : **accès complet** — Jarvis tourne en root, dossier de travail `/` (voir ci-dessous) |
+
+### Accès complet à tout le serveur
+
+```bash
+cd /opt/jarvis && sudo FULL_ACCESS=yes bash scripts/install-server.sh
+```
+
+Jarvis tourne alors en **root**, sans restriction systemd, avec `/` comme dossier
+de travail : il peut lire, chercher, écrire et lancer des commandes partout
+(configurations, journaux, services, paquets…). Les garde-fous restent : chaque
+commande, écriture de fichier ou redémarrage demande ton autorisation (bouton
+« Autoriser » dans Nexus). Les recherches de fichiers ignorent `/proc`, `/sys`,
+`/dev`, `/run` et s'arrêtent au bout de 20 s. Les commandes de gestion se lancent
+alors avec `sudo` (et non `sudo -u jarvis`).
 
 Le script peut être relancé : il garde le `.env` et la clé existants.
 
