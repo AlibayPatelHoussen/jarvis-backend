@@ -6,27 +6,14 @@ Gère la mémoire court terme et long terme.
 """
 
 import re
+from typing import Callable, Optional
 from tools.calculator import Calculator, CalculatorError
 from llm.ollama import Ollama, OllamaError
+from core.prompt import build_system_prompt
 from core.memory import ShortTermMemory, LongTermMemory
-from config import settings
 from tools.weather import Weather, WeatherError
 from tools.news import News, NewsError
 
-
-SYSTEM_PROMPT = f"""Tu es Jarvis, un assistant IA personnel.
-
-Caractéristiques :
-- Langue : français (réponds toujours en français)
-- Ton : professionnel, direct, efficace
-- Tu t'appelles Jarvis
-- L'utilisateur s'appelle {settings.USER_NAME}
-
-Règles :
-- Réponds de façon concise sauf si on te demande du détail
-- Si tu ne sais pas, dis-le honnêtement
-- Ne fabrique jamais d'informations
-"""
 
 # Commandes de mémoire reconnues par le Brain.
 # Les motifs sont ancrés en début de message (^) pour ne pas
@@ -118,46 +105,49 @@ class Brain:
         self.short_term = ShortTermMemory(max_messages=20)
         self.long_term = long_term or LongTermMemory()
 
-    def process(self, message: str) -> str:
+    def process(
+        self,
+        message: str,
+        on_token: Optional[Callable[[str], None]] = None,
+    ) -> str:
         """
         Traite un message et retourne une réponse.
 
-        Vérifie d'abord si c'est une commande de mémoire.
-        Sinon envoie au LLM avec le contexte.
+        Vérifie d'abord si c'est une commande directe (mémoire, calcul,
+        météo, actualités). Sinon envoie au LLM avec le contexte.
+
+        Args:
+            message  : Message de l'utilisateur
+            on_token : Si fourni, la réponse du LLM est streamée morceau
+                       par morceau vers cette fonction (affichage en direct).
+                       Les réponses des commandes directes ne passent pas
+                       par on_token : elles sont seulement retournées.
         """
         message = message.strip()
         if not message:
             return ""
 
-        # Vérifier les commandes de mémoire
-        memory_response = self._handle_memory_commands(message)
-        if memory_response is not None:
-            return memory_response
+        # Vérifier les commandes directes
+        direct = self._handle_memory_commands(message)
+        if direct is not None:
+            return direct
 
-        # Construire le contexte long terme
-        long_term_context = self._build_long_term_context()
-
-        # Construire le prompt système enrichi
-        system = SYSTEM_PROMPT
-        if long_term_context:
-            system += f"\n\nCe que tu sais sur l'utilisateur :\n{long_term_context}"
+        system = build_system_prompt(
+            known_facts=list(self.long_term.get_all().values())
+        )
+        messages = [{"role": "system", "content": system}]
+        messages += self.short_term.get_history()
+        messages.append({"role": "user", "content": message})
 
         try:
-            history = self.short_term.get_history()
-            response = self.llm.ask(
-                message=message,
-                system_prompt=system,
-                history=history
-            )
-            self.short_term.add("user", message)
-            self.short_term.add("assistant", response)
-            return response
-
+            reply = self.llm.chat(messages, on_token=on_token)
         except OllamaError as e:
-            return (
-                f"Je ne peux pas répondre en ce moment : {e}\n"
-                "Vérifiez qu'Ollama est lancé."
-            )
+            return f"Je ne peux pas répondre en ce moment : {e}"
+
+        response = reply["content"]
+        self.short_term.add("user", message)
+        self.short_term.add("assistant", response)
+        return response
 
     def _handle_memory_commands(self, message: str) -> str | None:
         """
@@ -241,17 +231,6 @@ class Brain:
         ]
         return f"fact_{max(numbers, default=0) + 1}"
 
-    def _build_long_term_context(self) -> str:
-        """
-        Construit un résumé des faits connus pour
-        l'injecter dans le prompt système.
-        """
-        facts = self.long_term.get_all()
-        if not facts:
-            return ""
-        lines = [f"- {value}" for value in facts.values()]
-        return "\n".join(lines)
-
     def _format_known_facts(self) -> str:
         """Formate les faits connus pour l'affichage."""
         facts = self.long_term.get_all()
@@ -289,6 +268,25 @@ class Brain:
     def is_ready(self) -> bool:
         """Vérifie si Ollama est accessible."""
         return self.llm.is_available()
+
+    def health(self) -> Optional[str]:
+        """
+        Vérifie que Jarvis peut discuter.
+
+        Returns:
+            None si tout va bien, sinon un message expliquant quoi faire.
+        """
+        if not self.llm.is_available():
+            return (
+                f"Ollama n'est pas accessible sur {self.llm.host}. "
+                "Lancez-le avec : ollama serve"
+            )
+        if not self.llm.has_model():
+            return (
+                f"Le modèle '{self.llm.model}' n'est pas installé. "
+                f"Installez-le avec : ollama pull {self.llm.model}"
+            )
+        return None
 
     def _calculate(self, expression: str) -> str:
         """Évalue une expression mathématique."""

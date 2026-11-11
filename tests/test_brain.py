@@ -244,3 +244,58 @@ def test_brain_fixture_does_not_touch_real_database(tmp_path, monkeypatch):
     monkeypatch.setattr(core.memory.LongTermMemory, "__init__", spy)
     Brain(long_term=core.memory.LongTermMemory(tmp_path / "m.db"))
     assert settings.MEMORY_DB not in opened
+
+
+# ─────────────────────────────────────────────
+# Conversation avec le LLM (faux serveur Ollama)
+# ─────────────────────────────────────────────
+
+from tests.fake_ollama import FakeOllama  # noqa: E402
+from llm.ollama import Ollama  # noqa: E402
+
+
+@pytest.fixture
+def ollama_server():
+    with FakeOllama() as fake:
+        yield fake
+
+
+@pytest.fixture
+def llm_brain(ollama_server, tmp_path):
+    llm = Ollama(host=ollama_server.url, model="mistral")
+    return Brain(llm=llm, long_term=LongTermMemory(db_path=tmp_path / "m.db"))
+
+
+def test_process_streams_and_keeps_history(llm_brain, ollama_server):
+    ollama_server.replies += [{"content": "Bonjour Houssen"}, {"content": "Oui"}]
+    tokens = []
+    assert llm_brain.process("Salut", on_token=tokens.append) == "Bonjour Houssen"
+    assert "".join(tokens) == "Bonjour Houssen"
+    llm_brain.process("Tu te souviens ?")
+    sent = ollama_server.requests[1]["messages"]
+    assert [m["role"] for m in sent] == ["system", "user", "assistant", "user"]
+    assert sent[1]["content"] == "Salut"
+
+
+def test_system_prompt_has_facts_and_date(llm_brain, ollama_server):
+    llm_brain.process("souviens-toi que j'aime le thé")
+    llm_brain.process("Que boire ?")
+    system = ollama_server.requests[0]["messages"][0]["content"]
+    assert "j'aime le thé" in system
+    assert "Nous sommes le" in system
+
+
+def test_llm_error_is_reported(tmp_path):
+    llm = Ollama(host="http://127.0.0.1:9", model="mistral")
+    brain = Brain(llm=llm, long_term=LongTermMemory(db_path=tmp_path / "m.db"))
+    assert "ollama serve" in brain.process("Bonjour")
+    assert brain.short_term.count() == 0
+
+
+def test_health(llm_brain, ollama_server, tmp_path):
+    assert llm_brain.health() is None
+    llm_brain.llm.model = "llama3.1"
+    assert "ollama pull llama3.1" in llm_brain.health()
+    down = Brain(llm=Ollama(host="http://127.0.0.1:9"),
+                 long_term=LongTermMemory(db_path=tmp_path / "d.db"))
+    assert "ollama serve" in down.health()

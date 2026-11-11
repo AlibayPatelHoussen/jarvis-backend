@@ -85,10 +85,10 @@ def test_run_works_without_ollama(monkeypatch, capsys):
     from interface import cli
 
     class FakeBrain:
-        def is_ready(self):
-            return False
+        def health(self):
+            return "Ollama n'est pas accessible sur http://localhost:11434."
 
-        def process(self, message):
+        def process(self, message, on_token=None):
             return f"echo:{message}"
 
     class FakeVoice:
@@ -116,3 +116,97 @@ def test_help_sections_are_separated(capsys):
     out = capsys.readouterr().out
     for section in ["CALCUL", "MÉTÉO", "ACTUALITÉS", "SYSTÈME"]:
         assert f"\n\n  {section}" in out
+
+
+# ─────────────────────────────────────────────
+# Étape 1 : streaming et commandes /xxx
+# ─────────────────────────────────────────────
+
+class FakeVoice:
+    def __init__(self, enabled=False):
+        self.enabled = enabled
+        self.said = []
+
+    def say(self, text):
+        if self.enabled:
+            self.said.append(text)
+
+    def shutdown(self):
+        pass
+
+
+def _run_loop(monkeypatch, brain, lines):
+    from interface import cli
+    inputs = iter(lines + ["quit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    voice = FakeVoice(enabled=True)
+    cli._loop(brain, voice)
+    return voice
+
+
+def test_loop_streams_llm_answer_once(monkeypatch, capsys):
+    class StreamingBrain:
+        def process(self, message, on_token=None):
+            for piece in ["Bon", "jour"]:
+                on_token(piece)
+            return "Bonjour"
+
+    voice = _run_loop(monkeypatch, StreamingBrain(), ["Salut"])
+    out = capsys.readouterr().out
+    assert out.count("Bonjour") == 1
+    assert "Jarvis >>> Bonjour" in out
+    assert voice.said == ["Bonjour"]
+
+
+def test_loop_prints_direct_command_answer(monkeypatch, capsys):
+    class DirectBrain:
+        def process(self, message, on_token=None):
+            return "2 + 2 = 4"
+
+    _run_loop(monkeypatch, DirectBrain(), ["calcule 2 + 2"])
+    assert "Jarvis >>> 2 + 2 = 4" in capsys.readouterr().out
+
+
+def test_slash_commands(monkeypatch, capsys):
+    from interface import cli
+
+    class Llm:
+        model = "mistral"
+
+        def get_models(self):
+            return ["mistral:latest", "qwen2.5:7b"]
+
+    class SlashBrain:
+        llm = Llm()
+        cleared = False
+
+        def health(self):
+            return None
+
+        def clear_conversation(self):
+            SlashBrain.cleared = True
+
+        def process(self, message, on_token=None):
+            raise AssertionError("une commande /xxx ne doit pas aller au Brain")
+
+    brain = SlashBrain()
+    voice = FakeVoice(enabled=True)
+    for command in ["/modele", "/modele qwen2.5:7b", "/voix off", "/effacer", "/inconnue"]:
+        assert cli._handle_slash_command(command, brain, voice) is True
+    out = capsys.readouterr().out
+    assert "qwen2.5:7b" in out
+    assert brain.llm.model == "qwen2.5:7b"
+    assert voice.enabled is False
+    assert SlashBrain.cleared
+    assert "Commande inconnue" in out
+    assert cli._handle_slash_command("bonjour", brain, voice) is False
+
+
+def test_voice_is_created_lazily(monkeypatch):
+    from interface import cli
+    created = []
+    monkeypatch.setattr(cli, "VoiceOutput", lambda: created.append(1))
+    voice = cli.Voice(enabled=False)
+    voice.say("test")
+    voice.shutdown()
+    assert created == []

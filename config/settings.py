@@ -54,6 +54,10 @@ _load_env()
 # Utilisateur
 USER_NAME: str = os.environ.get("JARVIS_USER_NAME", "Utilisateur")
 LANGUAGE: str = os.environ.get("JARVIS_LANGUAGE", "fr")
+# Lire les réponses à voix haute (si pyttsx3 est disponible)
+VOICE_ENABLED: bool = os.environ.get("JARVIS_VOICE", "on").lower() not in (
+    "off", "0", "non", "false"
+)
 
 # Ollama (LLM local)
 OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
