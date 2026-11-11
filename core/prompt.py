@@ -35,12 +35,14 @@ def format_date_fr(now: datetime) -> str:
 
 def build_system_prompt(
     known_facts: Optional[list[str]] = None,
+    user_name: Optional[str] = None,
     now: Optional[datetime] = None,
     extra_sections: Optional[list[str]] = None,
 ) -> str:
     """
     Args:
         known_facts    : Faits connus sur l'utilisateur
+        user_name      : Prénom de l'utilisateur (défaut : JARVIS_USER_NAME)
         now            : Date/heure courante (paramètre pour les tests)
         extra_sections : Blocs de texte ajoutés à la fin (environnement,
                          consignes des outils...)
@@ -54,7 +56,7 @@ Caractéristiques :
 - Langue : {language}
 - Ton : professionnel, direct, efficace
 - Tu t'appelles Jarvis
-- L'utilisateur s'appelle {settings.USER_NAME}
+- L'utilisateur s'appelle {user_name or settings.USER_NAME}
 
 Contexte :
 - Nous sommes le {format_date_fr(now)} (date ISO : {now.strftime("%Y-%m-%dT%H:%M")})

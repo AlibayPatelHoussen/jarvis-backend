@@ -9,15 +9,10 @@ import re
 from typing import Callable, Optional
 from tools.calculator import Calculator, CalculatorError
 from llm.ollama import Ollama, OllamaError, OllamaToolsUnsupported
-from tools.builtin import register_builtin_tools
 from tools.registry import ConfirmCallback, ToolRegistry
-from tools.files import Workspace, register_file_tools
-from tools.system import register_system_tools
-from tools.web import register_web_tools
 from core.environment import Environment, discover
-from tools.tasks import (
-    TaskStore, format_notes, format_reminders, format_tasks, register_task_tools,
-)
+from core.toolset import build_tools
+from tools.tasks import TaskStore, format_notes, format_reminders, format_tasks
 from core.prompt import build_system_prompt
 from core.memory import ShortTermMemory, LongTermMemory
 from config import settings
@@ -140,6 +135,8 @@ class Brain:
         environment: Environment = None,
         confirm: ConfirmCallback = None,
         on_tool: ToolCallback = None,
+        role: str = "admin",
+        user_name: str = None,
     ):
         """
         Args:
@@ -156,22 +153,23 @@ class Brain:
             confirm   : Demande l'autorisation pour les outils sensibles.
                         Sans cette fonction, ils sont refusés.
             on_tool   : Prévenu avant chaque appel d'outil (affichage).
+            role      : "admin" (tous les outils) ou "user" (sans terminal,
+                        fichiers, Docker ni services) — comme dans Nexus.
+            user_name : Prénom de l'utilisateur (défaut : JARVIS_USER_NAME).
         """
         self.llm = llm or Ollama()
         self.short_term = ShortTermMemory(max_messages=20)
         self.long_term = long_term or LongTermMemory()
         self.tasks = tasks or TaskStore(self.long_term.db_path)
         self.environment = environment or discover(settings.WORKSPACE)
+        self.role = role
+        self.user_name = user_name or settings.USER_NAME
         if tools is None:
-            tools = register_builtin_tools(ToolRegistry(), self.long_term)
-            register_task_tools(tools, self.tasks)
-            register_system_tools(
-                tools, self.environment,
+            tools = build_tools(
+                self.long_term, self.tasks, self.environment, role=role,
                 command_timeout=settings.COMMAND_TIMEOUT,
                 allow_commands=settings.ALLOW_COMMANDS,
             )
-            register_file_tools(tools, Workspace(self.environment.workspace))
-            register_web_tools(tools)
         self.tools = tools
         self.confirm = confirm
         self.on_tool = on_tool
@@ -207,6 +205,7 @@ class Brain:
 
         use_tools = self.tools_enabled and len(self.tools) > 0
         system = build_system_prompt(
+            user_name=self.user_name,
             known_facts=list(self.long_term.get_all().values()),
             extra_sections=(
                 [self.environment.summary(), TOOLS_GUIDE] if use_tools else None

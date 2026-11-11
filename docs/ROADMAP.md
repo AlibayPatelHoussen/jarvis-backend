@@ -66,19 +66,24 @@ cet environnement (plugins, MCP, API HTTP).
 | Client MCP | Jarvis se connecte aux serveurs MCP (standard ouvert) listés dans `config/mcp.json` et récupère seul leurs outils. |
 | Import OpenAPI | À partir de la description OpenAPI d'une application, Jarvis génère les outils correspondants. |
 
-## Étape 6 — Intégration dans Nexus
-
-Nexus est une application web (panneau de contrôle de serveur auto-hébergé
-et centre multimédia). Jarvis tourne à côté, comme un service.
+## Étape 6 — Jarvis sur ton serveur, utilisable partout ✅
 
 | Amélioration | Détail |
 |---|---|
-| API HTTP | `POST /chat` (réponse en streaming), `GET /tools`, `GET /health`, une session de conversation par utilisateur Nexus, clé d'API partagée. |
-| Outils fournis par Nexus | Nexus déclare ses propres actions (lancer un film, redémarrer une app, ajouter un média…) via `POST /tools` avec l'URL à appeler : Jarvis les utilise comme ses outils intégrés. |
-| Confirmations dans l'interface | Les actions sensibles renvoient une demande de confirmation que Nexus affiche (bouton Autoriser / Refuser). |
-| Widget de chat | Exemple de composant web à intégrer dans Nexus. |
+| Mode serveur | `python start.py --server` : API HTTP (FastAPI) + page de chat web, en local sur le serveur. |
+| Page web | Conversation en direct, outils affichés, boutons Autoriser / Refuser, rappels, installable sur l'écran d'accueil du téléphone. |
+| Sécurité | Clé d'accès obligatoire, écoute en local seulement, exposition par Cloudflare Tunnel (HTTPS). |
+| Multi-utilisateur | Une conversation, une mémoire et des tâches par utilisateur ; outils selon le rôle (`admin` / `user`), comme Nexus. |
+| Installation | `scripts/install-server.sh` (Ollama, modèle, utilisateur système, service systemd) et `scripts/update-server.sh`. Voir [SERVEUR.md](SERVEUR.md). |
+| API documentée | [API.md](API.md) : ce dont Nexus aura besoin pour intégrer Jarvis. |
 
-## Étape 7 — Finitions
+## Étape 7 — Intégration dans Nexus (plus tard)
+
+Le backend Nexus relaiera ses utilisateurs vers l'API de Jarvis (voir la fin
+d'[API.md](API.md)) ; Nexus pourra aussi exposer ses propres actions (lancer un
+film, scanner la bibliothèque…) comme outils de Jarvis.
+
+## Étape 8 — Finitions
 
 | Amélioration | Détail |
 |---|---|

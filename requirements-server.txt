@@ -1,0 +1,5 @@
+# Jarvis — dépendances du serveur uniquement (sans tests ni voix)
+# Installation : pip install -r requirements-server.txt
+psutil>=5.9
+fastapi>=0.110
+uvicorn>=0.29
