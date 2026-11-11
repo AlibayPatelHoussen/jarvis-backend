@@ -4,9 +4,6 @@ tests/test_memory.py
 Tests unitaires pour core/memory.py
 """
 
-import tempfile
-from pathlib import Path  # ← ajouter cette ligne
-
 from core.memory import ShortTermMemory, LongTermMemory
 
 
@@ -75,8 +72,9 @@ def test_short_term_keeps_latest():
 
 def make_temp_memory() -> LongTermMemory:
     """Crée une LongTermMemory avec une DB temporaire pour les tests."""
-    tmp = tempfile.mktemp(suffix=".db")
-    return LongTermMemory(db_path=Path(tmp))
+    import tempfile
+    from pathlib import Path
+    return LongTermMemory(db_path=Path(tempfile.mkdtemp()) / "memory.db")
 
 
 def test_long_term_starts_empty():
@@ -139,3 +137,54 @@ def test_long_term_count():
     mem.save("b", "2")
     mem.save("c", "3")
     assert mem.count() == 3
+
+
+# ─────────────────────────────────────────────
+# Non-régression
+# ─────────────────────────────────────────────
+
+def test_long_term_closes_connections(monkeypatch):
+    """Chaque opération doit fermer sa connexion SQLite."""
+    import sqlite3
+    opened = []
+    real_connect = sqlite3.connect
+
+    class Tracked:
+        def __init__(self, conn):
+            self._conn = conn
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+            self._conn.close()
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._conn.__exit__(*args)
+
+    def connect(*args, **kwargs):
+        conn = Tracked(real_connect(*args, **kwargs))
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    mem = make_temp_memory()
+    mem.save("a", "1")
+    mem.get("a")
+    mem.get_all()
+    mem.delete("a")
+    mem.count()
+    assert opened and all(c.closed for c in opened)
+
+
+def test_long_term_get_all_keeps_insertion_order():
+    mem = make_temp_memory()
+    for key in ["z", "a", "m"]:
+        mem.save(key, key.upper())
+    assert list(mem.get_all()) == ["z", "a", "m"]

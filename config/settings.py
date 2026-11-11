@@ -58,6 +58,10 @@ LANGUAGE: str = os.environ.get("JARVIS_LANGUAGE", "fr")
 # Ollama (LLM local)
 OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "mistral")
+try:
+    OLLAMA_NUM_CTX: int = int(os.environ.get("OLLAMA_NUM_CTX", "4096"))
+except ValueError:
+    OLLAMA_NUM_CTX = 4096
 
 # Anthropic (LLM cloud, optionnel)
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")

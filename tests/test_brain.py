@@ -4,23 +4,18 @@ tests/test_brain.py
 Tests unitaires pour core/brain.py
 """
 
-import tempfile
-from pathlib import Path
 import pytest
 from core.brain import Brain
 from core.memory import LongTermMemory
 
 
 @pytest.fixture
-def brain():
+def brain(tmp_path):
     """
     Crée un Brain avec une base SQLite temporaire.
     Chaque test repart d'une base vide.
     """
-    tmp = tempfile.mktemp(suffix=".db")
-    b = Brain()
-    b.long_term = LongTermMemory(db_path=Path(tmp))
-    return b
+    return Brain(long_term=LongTermMemory(db_path=tmp_path / "memory.db"))
 
 
 def test_brain_can_be_created(brain):
@@ -233,3 +228,19 @@ def test_tool_commands_are_routed(routed, message, expected):
 ])
 def test_calc_commands(brain, message, expected):
     assert brain.process(message) == expected
+
+
+def test_brain_fixture_does_not_touch_real_database(tmp_path, monkeypatch):
+    """Brain(long_term=...) ne doit pas ouvrir data/memory.db."""
+    from config import settings
+    import core.memory
+    opened = []
+    real_init = core.memory.LongTermMemory.__init__
+
+    def spy(self, db_path=None):
+        opened.append(db_path or settings.MEMORY_DB)
+        real_init(self, db_path)
+
+    monkeypatch.setattr(core.memory.LongTermMemory, "__init__", spy)
+    Brain(long_term=core.memory.LongTermMemory(tmp_path / "m.db"))
+    assert settings.MEMORY_DB not in opened
