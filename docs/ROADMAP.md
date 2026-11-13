@@ -58,10 +58,12 @@ cet environnement (plugins, MCP, API HTTP).
 | Web | `lire_page_web` (aussi en réseau local) et `recherche_web` (DuckDuckGo, sans clé). |
 | Sécurité | Le contenu des fichiers, pages et sorties est traité comme une donnée, jamais comme un ordre. |
 
-## Étape 5 — S'adapter à n'importe quel environnement
+## Étape 5 — S'adapter à n'importe quel environnement (en cours)
 
 | Amélioration | Détail |
 |---|---|
+| Outils fournis par l'hôte ✅ | Une application (Nexus) publie un manifeste de ses actions ; Jarvis les découvre seul et les utilise (téléchargements, bibliothèque, IPTV), selon les droits de l'utilisateur. |
+| Fichiers ✅ | Renommer / déplacer, créer un dossier, supprimer (avec autorisation). |
 | Plugins | Tout fichier Python dans `plugins/` qui déclare des `@tool` est chargé automatiquement. |
 | Client MCP | Jarvis se connecte aux serveurs MCP (standard ouvert) listés dans `config/mcp.json` et récupère seul leurs outils. |
 | Import OpenAPI | À partir de la description OpenAPI d'une application, Jarvis génère les outils correspondants. |

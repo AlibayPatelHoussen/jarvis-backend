@@ -135,3 +135,48 @@ def test_search_stops_after_time_limit(tools, ws, monkeypatch):
     monkeypatch.setattr(files.Workspace.walk, "__defaults__", (0,))
     out = tools.execute("chercher_fichiers", {"motif": "*.iso"})
     assert "arrêtée au bout de 20 s" in out
+
+
+# ─────────────────────────────────────────────
+# Renommer, créer, supprimer
+# ─────────────────────────────────────────────
+
+def rename(tools, chemin, nouveau):
+    return tools.execute("renommer_fichier", {"chemin": chemin, "nouveau": nouveau})
+
+
+def test_rename_in_place_and_move(tools, ws):
+    assert rename(tools, "Films/notes.txt", "a-voir.txt") \
+        == "Renommé : Films/notes.txt → Films/a-voir.txt"
+    assert (ws.root / "Films" / "a-voir.txt").exists()
+    assert "le dossier Archives n'existe pas" in rename(tools, "Films/a-voir.txt",
+                                                        "Archives/a-voir.txt")
+    tools.execute("creer_dossier", {"chemin": "Archives"})
+    assert rename(tools, "Films/a-voir.txt", "Archives/a-voir.txt").endswith(
+        "→ Archives/a-voir.txt")
+
+
+def test_rename_never_overwrites_or_escapes(tools, ws):
+    (ws.root / "b.txt").write_text("b")
+    (ws.root / "c.txt").write_text("c")
+    assert "existe déjà" in rename(tools, "b.txt", "c.txt")
+    assert (ws.root / "c.txt").read_text() == "c"
+    assert "accès refusé" in rename(tools, "b.txt", "../../b.txt")
+    assert "introuvable" in rename(tools, "absent", "x")
+    assert "dossier de travail" in rename(tools, ".", "x")
+
+
+def test_delete_needs_confirmation(tools, ws):
+    def delete(chemin, **kw):
+        return tools.execute("supprimer_fichier", {"chemin": chemin}, **kw)
+
+    ok = lambda s: True  # noqa: E731
+    assert tools.get("supprimer_fichier").confirm is True
+    assert tools.get("renommer_fichier").confirm is False
+    assert delete("Films") == "Action refusée par l'utilisateur."
+    assert (ws.root / "Films").exists()
+    assert delete("Films", confirm=ok) == "Dossier supprimé : Films (2 fichier(s))"
+    assert not (ws.root / "Films").exists()
+    assert delete("docker-compose.yml", confirm=ok) == "Fichier supprimé : docker-compose.yml"
+    assert "refus" in delete(".", confirm=ok)
+    assert "accès refusé" in delete("../secret.txt", confirm=ok)

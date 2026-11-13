@@ -103,6 +103,11 @@ except ValueError:
 CORS_ORIGINS: list = [o.strip() for o in os.environ.get("JARVIS_CORS_ORIGINS", "").split(",")
                       if o.strip()]
 
+# Application hôte qui fournit des outils à Jarvis (ex. Nexus) :
+# adresse de ses outils et secret partagé (JARVIS_TOOLS_SECRET côté Nexus)
+HOST_TOOLS_URL: str = os.environ.get("JARVIS_HOST_TOOLS_URL", "").strip()
+HOST_SECRET: str = os.environ.get("JARVIS_HOST_SECRET", "").strip()
+
 # Notifications push : contact transmis aux services de push des navigateurs
 # (Apple, Google, Mozilla) avec chaque envoi — un e-mail « mailto:… » ou une URL https
 PUSH_CONTACT: str = os.environ.get("JARVIS_PUSH_CONTACT", "mailto:jarvis@example.com")

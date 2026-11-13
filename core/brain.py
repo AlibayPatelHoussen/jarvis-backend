@@ -12,6 +12,7 @@ from llm.ollama import Ollama, OllamaError, OllamaToolsUnsupported
 from tools.registry import ConfirmCallback, ToolRegistry
 from core.environment import Environment, discover
 from core.toolset import build_tools
+from tools.host import HostTools, default_host, sync_host_tools
 from tools.tasks import TaskStore, format_notes, format_reminders, format_tasks
 from core.prompt import build_system_prompt
 from core.memory import ShortTermMemory, LongTermMemory
@@ -137,6 +138,8 @@ class Brain:
         on_tool: ToolCallback = None,
         role: str = "admin",
         user_name: str = None,
+        host: HostTools = None,
+        user_id: str = "owner",
     ):
         """
         Args:
@@ -175,6 +178,11 @@ class Brain:
         self.on_tool = on_tool
         # Passe à False si le modèle ne sait pas utiliser d'outils
         self.tools_enabled = settings.TOOLS_ENABLED
+        # Outils d'une application hôte (ex. Nexus), relus régulièrement
+        self.host = host if host is not None else default_host()
+        self.user_id = user_id
+        self._host_tool_names: list[str] = []
+        self._host_version: Optional[str] = None
 
     def process(
         self,
@@ -207,12 +215,15 @@ class Brain:
         if direct is not None:
             return direct
 
+        self._sync_host_tools()
         use_tools = self.tools_enabled and len(self.tools) > 0
         system = build_system_prompt(
             user_name=self.user_name,
             known_facts=list(self.long_term.get_all().values()),
             extra_sections=(
-                [self.environment.summary(), TOOLS_GUIDE] if use_tools else None
+                [self.environment.summary(), TOOLS_GUIDE]
+                + ([self.host.prompt_section()] if self._host_tool_names else [])
+                if use_tools else None
             ),
         )
         messages = [{"role": "system", "content": system}]
@@ -228,6 +239,17 @@ class Brain:
             self.short_term.add("user", message)
             self.short_term.add("assistant", response)
         return response
+
+    def _sync_host_tools(self) -> None:
+        """Ajoute (ou met à jour) les outils de l'application hôte."""
+        if self.host is None or not self.host.configured:
+            return
+        self.host.refresh()
+        if self.host.version == self._host_version:
+            return
+        self._host_tool_names = sync_host_tools(
+            self.tools, self.host, self.user_id, self.role, previous=self._host_tool_names)
+        self._host_version = self.host.version
 
     def _run_agent(
         self,
