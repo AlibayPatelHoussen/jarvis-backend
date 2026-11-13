@@ -79,6 +79,7 @@ class SessionManager:
                     environment=self.environment,
                     role=role,
                     user_name=name or None,
+                    user_id=user_id,
                 )
                 if session is not None:  # garder la conversation en cours
                     brain.short_term = session.brain.short_term

@@ -104,6 +104,24 @@ cloudflared tunnel route dns <nom-du-tunnel> jarvis.houssen-serveur.com
 sudo systemctl restart cloudflared
 ```
 
+### Donner à Jarvis les actions de Nexus
+
+Pour que Jarvis puisse télécharger, analyser la bibliothèque ou mettre une chaîne
+IPTV, Nexus lui prête ses actions. Un même secret dans les deux `.env` :
+
+```bash
+SECRET=$(openssl rand -base64 32)
+# /opt/jarvis/.env
+JARVIS_HOST_TOOLS_URL=http://127.0.0.1:3001/api/jarvis/tools
+JARVIS_HOST_SECRET=$SECRET
+# /opt/nexus/backend/.env
+JARVIS_TOOLS_SECRET=$SECRET
+```
+
+Puis `sudo systemctl restart jarvis` et `pm2 restart nexus-backend`. Jarvis
+découvre seul les outils de Nexus (voir [API.md](API.md), « Outils fournis par
+une application hôte ») ; chaque action reste limitée aux droits du compte Nexus.
+
 ## 3. Parler à Jarvis dans le terminal du serveur
 
 ```bash

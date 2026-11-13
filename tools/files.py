@@ -14,6 +14,7 @@ vérifiés : impossible de sortir du dossier autorisé.
 import fnmatch
 import functools
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -229,5 +230,74 @@ def register_file_tools(registry, workspace: Workspace):
             f.write(contenu)
         action = "complété" if ajouter else "écrit"
         return f"Fichier {action} : {workspace.display(path)} ({len(contenu)} caractères)"
+
+    @registry.tool()
+    @safe
+    def renommer_fichier(chemin: str, nouveau: str) -> str:
+        """
+        Renomme ou déplace un fichier ou un dossier. Ne remplace jamais un
+        élément existant. Après un changement dans les médias, relancer
+        l'analyse de la bibliothèque concernée.
+
+        Args:
+            chemin  : Fichier ou dossier à renommer / déplacer
+            nouveau : Nouveau nom (même dossier) ou nouveau chemin complet
+        """
+        source = workspace.resolve(chemin)
+        if not source.exists():
+            return f"Erreur : introuvable : {chemin}"
+        if source == workspace.root:
+            return "Erreur : impossible de renommer le dossier de travail lui-même."
+        nouveau = nouveau.strip()
+        if not nouveau or nouveau in (".", ".."):
+            return "Erreur : nouveau nom vide."
+        # Un simple nom reste dans le même dossier
+        target = (source.parent / nouveau if "/" not in nouveau
+                  else workspace.resolve(nouveau))
+        target = workspace.resolve(str(target))
+        if target.exists():
+            return f"Erreur : {workspace.display(target)} existe déjà (rien n'a été remplacé)."
+        if not target.parent.is_dir():
+            return f"Erreur : le dossier {workspace.display(target.parent)} n'existe pas."
+        shutil.move(str(source), str(target))
+        return f"Renommé : {workspace.display(source)} → {workspace.display(target)}"
+
+    @registry.tool()
+    @safe
+    def creer_dossier(chemin: str) -> str:
+        """
+        Crée un dossier (et les dossiers parents manquants).
+
+        Args:
+            chemin : Dossier à créer
+        """
+        folder = workspace.resolve(chemin)
+        if folder.exists():
+            return f"{workspace.display(folder)} existe déjà."
+        folder.mkdir(parents=True)
+        return f"Dossier créé : {workspace.display(folder)}"
+
+    @registry.tool(confirm=True)
+    @safe
+    def supprimer_fichier(chemin: str) -> str:
+        """
+        Supprime définitivement un fichier ou un dossier (avec tout son
+        contenu). L'utilisateur doit confirmer. Après une suppression dans les
+        médias, relancer l'analyse de la bibliothèque concernée.
+
+        Args:
+            chemin : Fichier ou dossier à supprimer
+        """
+        target = workspace.resolve(chemin)
+        if target == workspace.root or target == Path(target.anchor):
+            return "Erreur : refus de supprimer le dossier de travail ou la racine."
+        if not target.exists() and not target.is_symlink():
+            return f"Erreur : introuvable : {chemin}"
+        if target.is_dir() and not target.is_symlink():
+            count = sum(len(files) for _, _, files in os.walk(target))
+            shutil.rmtree(target)
+            return f"Dossier supprimé : {workspace.display(target)} ({count} fichier(s))"
+        target.unlink()
+        return f"Fichier supprimé : {workspace.display(target)}"
 
     return registry

@@ -286,3 +286,31 @@ navigateur directement (la clé reste côté serveur).
    tel quel.
 3. Il relaie aussi `/api/chat/confirm`, `/api/notifications`, `/api/history`,
    `/api/conversation/clear` avec les mêmes en-têtes.
+
+## Outils fournis par une application hôte
+
+Une application (ex. Nexus) peut donner ses propres actions à Jarvis : Jarvis lit
+leur description et son modèle les utilise comme ses outils intégrés
+(téléchargements, bibliothèque, chaînes IPTV…). Ajouter une action côté hôte
+suffit : rien à changer dans Jarvis.
+
+Côté Jarvis (`.env`) :
+
+```
+JARVIS_HOST_TOOLS_URL=http://127.0.0.1:3001/api/jarvis/tools
+JARVIS_HOST_SECRET=<secret partagé>
+```
+
+Côté hôte, deux routes protégées par l'en-tête `X-Jarvis-Secret` :
+
+| Route | Rôle |
+|---|---|
+| `GET <url>/manifest` | `{"name", "description", "tools": [{"name", "description", "parameters" (JSON Schema), "confirm", "roles"}]}` |
+| `POST <url>/<nom>` | Corps `{"arguments": {…}, "user": {"id", "role"}}` → `{"result": "texte lu par le modèle"}` |
+
+- Le manifeste est relu toutes les 5 minutes (un hôte arrêté garde les outils connus).
+- `roles` : seuls les utilisateurs de ces rôles reçoivent l'outil.
+- `confirm: true` : Jarvis demande l'autorisation avant l'appel (bouton
+  Autoriser, ou mise en attente pour les applications sans écran).
+- `user.id` est l'utilisateur Jarvis (`owner` pour le propriétaire) : l'hôte
+  doit vérifier lui-même ses droits.
